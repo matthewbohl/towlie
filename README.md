@@ -1,5 +1,24 @@
 # Towel Bar Agent
 
+```text
+             .------------------------.
+            /  ::::::::::::::::::::::  \
+           |  ::    _        _     ::  |
+           |  ::   (o)      (o)    ::  |
+           |  ::        __          ::  |
+     __    |  ::     .-'  '-.       ::  |    __
+    /  `---|  ::    /  ~~~~  \      ::  |---'  \
+    \__    |  ::    \________/      ::  |    __/
+       `---|  ::::::::::::::::::::::  |---'
+           |  ::::::::::::::::::::::  |
+           |  ::::::::::::::::::::::  |
+           '--------------------------'
+                 /  /        \  \
+                /__/          \__\
+
+                   "Wanna get dry?"
+```
+
 `towelbar-agent` turns an Ethernet-connected Raspberry Pi with one Wi-Fi
 adapter into a rotating controller for Amba TDHC/TDHCR heated towel bars.
 The Wi-Fi adapter associates with each `emmesteel...` hotspot in turn, reads

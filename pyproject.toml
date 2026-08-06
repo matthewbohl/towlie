@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "towelbar-agent"
+version = "0.2.0"
+description = "Rotating Wi-Fi controller and discovery agent for Amba TDHC towel bars"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "httpx>=0.27,<1",
+  "paho-mqtt>=2.1,<3",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp[cli]>=1.9,<2"]
+test = ["pytest>=8,<9"]
+
+[project.scripts]
+towelbar-agent = "towelbar_agent.cli:main"
+towelbar-mcp = "towelbar_agent.mcp_server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

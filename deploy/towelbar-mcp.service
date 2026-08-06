@@ -1,0 +1,18 @@
+[Unit]
+Description=Towel Bar Discovery MCP Server (stdio template)
+Documentation=https://modelcontextprotocol.io/
+
+# MCP stdio servers are normally launched by their client, not systemd. This
+# file documents the executable and sandbox; do not enable it directly.
+[Service]
+Type=simple
+User=towelbar
+Group=towelbar
+Environment=TOWELBAR_CONFIG=/etc/towelbar-agent/config.yaml
+WorkingDirectory=/var/lib/towelbar-agent
+ExecStart=/opt/towelbar-agent/venv/bin/towelbar-mcp
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/towelbar-agent

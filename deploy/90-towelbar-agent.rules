@@ -1,0 +1,8 @@
+// Allow the dedicated service user to control only NetworkManager connections
+// without granting unrestricted sudo access.
+polkit.addRule(function(action, subject) {
+    if (subject.user == "towelbar" &&
+        action.id.indexOf("org.freedesktop.NetworkManager.") == 0) {
+        return polkit.Result.YES;
+    }
+});

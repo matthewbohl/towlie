@@ -1,0 +1,4 @@
+#!/opt/towelbar-agent/venv/bin/python
+from towelbar_agent.cli import main
+
+main()

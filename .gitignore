@@ -1,0 +1,8 @@
+.venv/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+captures/
+config.yaml
+towelbar-agent-raspberry-pi.zip

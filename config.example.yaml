@@ -1,0 +1,34 @@
+wifi_interface: wlan0
+poll_interval_seconds: 30
+connect_timeout_seconds: 20
+request_timeout_seconds: 8
+
+mqtt:
+  host: 192.168.1.10
+  port: 1883
+  username: towelbar
+  password: change-me
+  topic_prefix: towelbar
+  discovery_prefix: homeassistant
+
+controllers:
+  - id: primary_bath
+    name: Primary Bathroom Towel Bar
+    ssid: emmesteel-SERIAL-ONE
+    password: replace-with-controller-password
+
+    driver: emmesteel
+    base_url: http://192.168.1.1/
+    default_timer_enabled: true
+    default_timer_minutes: 120
+    max_timer_minutes: 240
+
+  - id: guest_bath
+    name: Guest Bathroom Towel Bar
+    ssid: emmesteel-SERIAL-TWO
+    password: replace-with-controller-password
+    driver: emmesteel
+    base_url: http://192.168.1.1/
+    default_timer_enabled: true
+    default_timer_minutes: 120
+    max_timer_minutes: 240

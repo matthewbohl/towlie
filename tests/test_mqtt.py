@@ -33,6 +33,8 @@ def test_emmesteel_discovery_uses_climate_and_removes_raw_controls():
     assert climate["temperature_command_topic"].endswith(
         "/set/target_temperature"
     )
+    assert climate["name"] == "Towel Bar Control"
+    assert "current_temperature_topic" not in climate
     assert climate["min_temp"] == 30
     assert climate["max_temp"] == 70
 
@@ -40,5 +42,9 @@ def test_emmesteel_discovery_uses_climate_and_removes_raw_controls():
     raw_target = (
         f"homeassistant/number/towelbar_{controller.id}_target_temperature/config"
     )
+    old_current_temperature = (
+        f"homeassistant/sensor/towelbar_{controller.id}_current_temperature/config"
+    )
     assert published[raw_power] == ("", True)
     assert published[raw_target] == ("", True)
+    assert published[old_current_temperature] == ("", True)

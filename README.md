@@ -240,12 +240,13 @@ In Home Assistant:
 
 Each EmmeSteel device normally exposes:
 
-- Climate control with `Off` and `Heat` modes
-- Stored target temperature (`30–70 °C`) within the climate control
+- Towel Bar Control with `Off` and `Heat` modes. It uses Home Assistant's
+  `climate` entity type solely to combine these controls; it is not a room
+  thermostat and does not report room temperature.
+- Stored target temperature (`30–70 °C`) within Towel Bar Control
 - Heat-level control (`0–5`)
-- Current-temperature sensor
 - Heating-status sensor
-- Countdown duration
+- Auto-Off Timer (remaining minutes)
 - Default-timer switch and duration
 - Last-seen, connection, and command-pending diagnostics
 

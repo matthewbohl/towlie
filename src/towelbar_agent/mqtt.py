@@ -185,7 +185,10 @@ class HomeAssistantMqtt:
             self.publish(
                 f"{discovery}/climate/{unique}/config",
                 {
-                    "name": "Climate",
+                    # HA's climate domain gives us one standard control for the
+                    # on/off mode and stored temperature setting.  This is not a
+                    # room-temperature thermostat.
+                    "name": "Towel Bar Control",
                     "unique_id": unique,
                     "object_id": unique,
                     "device": device,
@@ -202,10 +205,6 @@ class HomeAssistantMqtt:
                     "temperature_state_topic": f"{base}/{controller.id}/state",
                     "temperature_state_template": (
                         "{{ value_json.target_temperature }}"
-                    ),
-                    "current_temperature_topic": f"{base}/{controller.id}/state",
-                    "current_temperature_template": (
-                        "{{ value_json.current_temperature }}"
                     ),
                     "action_topic": f"{base}/{controller.id}/state",
                     "action_template": (
@@ -228,6 +227,14 @@ class HomeAssistantMqtt:
             )
             self.publish(
                 f"{discovery}/number/towelbar_{controller.id}_target_temperature/config",
+                "",
+                retain=True,
+            )
+            # The devices do not provide a trustworthy current-temperature
+            # measurement.  Clear the prior retained discovery record so HA
+            # removes the old entity after an upgrade.
+            self.publish(
+                f"{discovery}/sensor/towelbar_{controller.id}_current_temperature/config",
                 "",
                 retain=True,
             )
@@ -263,7 +270,7 @@ class HomeAssistantMqtt:
                 "mode": "slider",
             },
             ("number", "timer_minutes"): {
-                "name": "Countdown",
+                "name": "Auto-Off Timer",
                 "command_topic": f"{base}/{controller.id}/set/timer_minutes",
                 "state_topic": f"{base}/{controller.id}/state",
                 "value_template": "{{ value_json.timer_minutes }}",
@@ -293,14 +300,6 @@ class HomeAssistantMqtt:
                 "step": 5,
                 "unit_of_measurement": "min",
                 "mode": "box",
-            },
-            ("sensor", "current_temperature"): {
-                "name": "Current temperature",
-                "state_topic": f"{base}/{controller.id}/state",
-                "value_template": "{{ value_json.current_temperature }}",
-                "unit_of_measurement": "°C",
-                "device_class": "temperature",
-                "state_class": "measurement",
             },
             ("binary_sensor", "heating"): {
                 "name": "Heating",
@@ -339,7 +338,6 @@ class HomeAssistantMqtt:
             "timer_minutes": controller.driver == "emmesteel" or bool(protocol and protocol.timer_minutes),
             "default_timer_enabled": controller.driver == "emmesteel",
             "default_timer_minutes": controller.driver == "emmesteel",
-            "current_temperature": controller.driver == "emmesteel",
             "heating": controller.driver == "emmesteel",
             "command_pending": True,
             "last_seen": True,
@@ -356,19 +354,6 @@ class HomeAssistantMqtt:
                 "object_id": unique,
                 "device": device,
             }
-            if object_name == "current_temperature":
-                payload.pop("availability_topic", None)
-                payload["availability"] = [
-                    {"topic": f"{base}/availability"},
-                    {
-                        "topic": f"{base}/{controller.id}/state",
-                        "value_template": (
-                            "{{ 'online' if value_json.temperature_sensor_enabled "
-                            "else 'offline' }}"
-                        ),
-                    },
-                ]
-                payload["availability_mode"] = "all"
             self.publish(
                 f"{discovery}/{component}/{unique}/config", payload, retain=True
             )
@@ -393,10 +378,6 @@ class HomeAssistantMqtt:
             "heat_level": state.heat_level if state else None,
             "timer_minutes": state.timer_minutes if state else None,
             "target_temperature": state.target_temperature if state else None,
-            "current_temperature": state.current_temperature if state else None,
-            "temperature_sensor_enabled": (
-                state.temperature_sensor_enabled if state else None
-            ),
             "heating": state.heating if state else None,
             "timer_active": state.timer_active if state else None,
             "command_pending": command_pending,

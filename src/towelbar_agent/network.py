@@ -321,7 +321,9 @@ def _noop_context() -> Iterator[None]:
 
 class WifiLock:
     def __init__(self, interface: str, timeout: float = 0):
-        root = Path(os.environ.get("TOWELBAR_LOCK_DIR", "/run/lock"))
+        root = Path(
+            os.environ.get("TOWELBAR_LOCK_DIR", "/var/lib/towelbar-agent")
+        )
         self.path = root / f"towelbar-agent-{NetworkManager._safe_name(interface)}.lock"
         self.timeout = timeout
         self.handle: Any | None = None

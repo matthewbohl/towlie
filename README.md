@@ -152,9 +152,21 @@ Start with:
 
 ```yaml
 wifi_interface: wlan0
-poll_interval_seconds: 30
 connect_timeout_seconds: 20
 request_timeout_seconds: 8
+
+rotation:
+  target_revisit_seconds: 30
+  settle_after_connect_seconds: 1
+  retry_delay_seconds: 3
+  retries: 0
+
+diagnostics:
+  enabled: true
+  events_path: /var/lib/towelbar-agent/diagnostics/events.jsonl
+  capture_network_on_failure: true
+  retention_days: 7
+  max_file_megabytes: 20
 
 mqtt:
   host: 192.168.1.10
@@ -241,6 +253,12 @@ Commands may remain pending while the Pi is connected to another towel bar.
 The pending sensor clears only after Towlie reconnects, applies the command,
 and confirms the resulting state.
 
+`target_revisit_seconds` is measured from the start of one attempt for a towel
+bar to the start of its next attempt. This keeps the configured cadence stable
+instead of adding a fixed sleep after a variable-length pass through all bars.
+The agent, CLI, and MCP server share an exclusive `wlan0` lock so exploratory
+requests cannot interrupt a poll already in progress.
+
 Towlie stores the last confirmed state atomically. After a restart or polling
 failure, cached state is trusted for no more than 30 minutes. Older state is
 reported as unknown.
@@ -295,23 +313,67 @@ Common issues:
 - **Controller remains offline:** verify its SSID, password, signal strength,
   and that NetworkManager owns `wlan0`.
 - **Commands are delayed:** this is expected during rotation; check the pending
-  sensor and reduce `poll_interval_seconds` if appropriate.
+  sensor and reduce `rotation.target_revisit_seconds` if appropriate.
 - **Installer reports missing modules:** rerun it with
   `--install-dependencies`.
 
-## Discovery tools
+## Diagnostics and soak testing
 
-The optional MCP server exposes read-only Wi-Fi scanning and portal capture,
-plus explicit HTTP exploration:
+When diagnostics are enabled, each poll writes a sanitized JSON record to
+`/var/lib/towelbar-agent/diagnostics/events.jsonl`. Records include association,
+network readiness, TCP, WebSocket handshake, first-state, and timer-request
+timings. Failed attempts also capture the active SSID, signal, addresses,
+routes, neighbors, and Wi-Fi link state. Passwords are never written to the
+diagnostic file or command errors.
+
+Summarize the last 24 hours or inspect recent failures:
+
+```bash
+sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
+  --config /etc/towelbar-agent/config.yaml diagnostics --hours 24
+
+sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
+  --config /etc/towelbar-agent/config.yaml diagnostics \
+  --hours 24 --failures 10
+```
+
+Queue a 30-minute status-only soak test in the running agent:
+
+```bash
+sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
+  --config /etc/towelbar-agent/config.yaml soak-start \
+  --duration-minutes 30 \
+  --intervals 10,15,20,30,45,60 \
+  --settle-seconds 0,0.5,1,2
+
+sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
+  --config /etc/towelbar-agent/config.yaml soak-status
+```
+
+The matrix is randomized to reduce time-of-day bias. The report groups results
+by controller, switch interval, and post-association settling time, with success
+rate, failure phase, consecutive failures, signal, actual revisit time, and
+p50/p95 latency. Soak probes never send power, temperature, heat-level, or timer
+commands. Home Assistant commands received during a soak remain pending until
+normal rotation resumes. Stop a running test safely with `soak-stop`.
+
+## Discovery and MCP tools
+
+The MCP server exposes Wi-Fi scanning, portal capture, explicit HTTP
+exploration, diagnostic reporting, exclusive status probes, and soak control:
 
 - `wifi_scan`
 - `portal_snapshot`
 - `http_request`
+- `diagnostic_summary`
+- `recent_failures`
+- `probe_controller`
+- `soak_start`, `soak_status`, `soak_stop`, and `soak_report`
 
 Launch it with `/opt/towelbar-agent/venv/bin/towelbar-mcp` and set
-`TOWELBAR_CONFIG=/etc/towelbar-agent/config.yaml`. State-changing exploratory
-requests should be made only after confirming the controller endpoint and
-payload.
+`TOWELBAR_CONFIG=/etc/towelbar-agent/config.yaml`. All network operations use
+the shared Wi-Fi lock. State-changing exploratory requests should be made only
+after confirming the controller endpoint and payload.
 
 ## Development
 

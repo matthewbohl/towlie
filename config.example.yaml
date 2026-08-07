@@ -1,7 +1,19 @@
 wifi_interface: wlan0
-poll_interval_seconds: 30
 connect_timeout_seconds: 20
 request_timeout_seconds: 8
+
+rotation:
+  target_revisit_seconds: 30
+  settle_after_connect_seconds: 1
+  retry_delay_seconds: 3
+  retries: 0
+
+diagnostics:
+  enabled: true
+  events_path: /var/lib/towelbar-agent/diagnostics/events.jsonl
+  capture_network_on_failure: true
+  retention_days: 7
+  max_file_megabytes: 20
 
 mqtt:
   host: 192.168.1.10

@@ -5,6 +5,7 @@ import hashlib
 import os
 import socket
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -53,7 +54,7 @@ def parse_state(message: str) -> ControllerState:
 
 
 class BoundWebSocket:
-    def __init__(self, url: str, interface: str, timeout: float = 8):
+    def __init__(self, url: str, interface: str, timeout: float = 8, trace: Any | None = None):
         parsed = urlparse(url)
         if parsed.scheme != "ws" or not parsed.hostname:
             raise ValueError("EmmeSteel WebSocket URL must use ws://")
@@ -62,6 +63,7 @@ class BoundWebSocket:
         self.path = parsed.path or "/"
         self.interface = interface
         self.timeout = timeout
+        self.trace = trace
         self.sock: socket.socket | None = None
         self.buffer = bytearray()
 
@@ -74,7 +76,9 @@ class BoundWebSocket:
             getattr(socket, "SO_BINDTODEVICE", 25),
             self.interface.encode() + b"\0",
         )
-        sock.connect((self.host, self.port))
+        phase = self.trace.phase("tcp_connect") if self.trace else _noop_context()
+        with phase:
+            sock.connect((self.host, self.port))
         request = (
             f"GET {self.path} HTTP/1.1\r\n"
             f"Host: {self.host}\r\n"
@@ -83,20 +87,22 @@ class BoundWebSocket:
             f"Sec-WebSocket-Key: {key}\r\n"
             "Sec-WebSocket-Version: 13\r\n\r\n"
         ).encode("ascii")
-        sock.sendall(request)
-        response, remainder = self._read_until(sock, b"\r\n\r\n")
-        status = response.split(b"\r\n", 1)[0]
-        if b" 101 " not in status:
-            sock.close()
-            raise EmmeSteelError(f"WebSocket upgrade failed: {status.decode('latin-1')}")
-        expected = base64.b64encode(
-            hashlib.sha1(
-                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
-            ).digest()
-        )
-        if expected.lower() not in response.lower():
-            sock.close()
-            raise EmmeSteelError("WebSocket handshake returned an invalid accept key")
+        phase = self.trace.phase("websocket_handshake") if self.trace else _noop_context()
+        with phase:
+            sock.sendall(request)
+            response, remainder = self._read_until(sock, b"\r\n\r\n")
+            status = response.split(b"\r\n", 1)[0]
+            if b" 101 " not in status:
+                sock.close()
+                raise EmmeSteelError(f"WebSocket upgrade failed: {status.decode('latin-1')}")
+            expected = base64.b64encode(
+                hashlib.sha1(
+                    (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+                ).digest()
+            )
+            if expected.lower() not in response.lower():
+                sock.close()
+                raise EmmeSteelError("WebSocket handshake returned an invalid accept key")
         self.sock = sock
         self.buffer.extend(remainder)
         return self
@@ -180,6 +186,7 @@ class EmmeSteelController:
     interface: str
     timeout: float = 8
     max_timer_minutes: int = 240
+    trace: Any | None = None
 
     @property
     def websocket_url(self) -> str:
@@ -187,12 +194,16 @@ class EmmeSteelController:
         return f"ws://{parsed.hostname}:{parsed.port or 80}/ws"
 
     def status(self) -> ControllerState:
-        with BoundWebSocket(self.websocket_url, self.interface, self.timeout) as ws:
-            return self._receive_state(ws)
+        with BoundWebSocket(self.websocket_url, self.interface, self.timeout, self.trace) as ws:
+            phase = self.trace.phase("first_state") if self.trace else _noop_context()
+            with phase:
+                return self._receive_state(ws)
 
     def apply(self, desired: dict[str, object]) -> ControllerState:
-        with BoundWebSocket(self.websocket_url, self.interface, self.timeout) as ws:
-            state = self._receive_state(ws)
+        with BoundWebSocket(self.websocket_url, self.interface, self.timeout, self.trace) as ws:
+            phase = self.trace.phase("first_state") if self.trace else _noop_context()
+            with phase:
+                state = self._receive_state(ws)
             if "power" in desired and state.power != bool(desired["power"]):
                 ws.send_text("on-off")
             if "heat_level" in desired:
@@ -219,12 +230,14 @@ class EmmeSteelController:
                 f"timer must be between 0 and {self.max_timer_minutes} minutes"
             )
         query = urlencode({"ore": minutes // 60, "min": minutes % 60})
-        with httpx.Client(
-            transport=interface_transport(self.interface),
-            timeout=self.timeout,
-        ) as client:
-            response = client.get(self.base_url.rstrip("/") + "/timerSet?" + query)
-            response.raise_for_status()
+        phase = self.trace.phase("timer_http") if self.trace else _noop_context()
+        with phase:
+            with httpx.Client(
+                transport=interface_transport(self.interface),
+                timeout=self.timeout,
+            ) as client:
+                response = client.get(self.base_url.rstrip("/") + "/timerSet?" + query)
+                response.raise_for_status()
 
     @staticmethod
     def _receive_state(ws: BoundWebSocket) -> ControllerState:
@@ -232,3 +245,11 @@ class EmmeSteelController:
             message = ws.receive_text()
             if message.startswith("DT:"):
                 return parse_state(message)
+
+
+class _noop_context:
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        return None

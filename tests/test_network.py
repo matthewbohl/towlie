@@ -1,6 +1,8 @@
 import subprocess
 
-from towelbar_agent.network import NetworkManager
+import pytest
+
+from towelbar_agent.network import NetworkError, NetworkManager, WifiBusyError, WifiLock
 
 
 def completed(stdout: str = "", returncode: int = 0):
@@ -32,3 +34,24 @@ def test_subnet_first_host_uses_interface_address():
         return completed()
 
     assert NetworkManager("wlan0", runner=runner).subnet_first_host() == "192.168.1.1"
+
+
+def test_network_error_redacts_wifi_password():
+    def runner(args, **kwargs):
+        return completed("", 1)
+
+    manager = NetworkManager("wlan0", runner=runner)
+    with pytest.raises(NetworkError) as caught:
+        manager._command(
+            ["nmcli", "connection", "modify", "x", "wifi-sec.psk", "secret"]
+        )
+    assert "secret" not in str(caught.value)
+    assert "<redacted>" in str(caught.value)
+
+
+def test_wifi_lock_is_exclusive(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOWELBAR_LOCK_DIR", str(tmp_path))
+    with WifiLock("wlan0"):
+        with pytest.raises(WifiBusyError):
+            with WifiLock("wlan0"):
+                pass

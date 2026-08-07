@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -11,8 +12,10 @@ import httpx
 
 from .agent import TowelBarAgent
 from .config import load_config
+from .diagnostics import read_events, summarize_events
 from .discovery import snapshot_portal
-from .network import NetworkManager, interface_transport
+from .network import NetworkManager, WifiLock, interface_transport
+from .soak import SoakControl
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +43,18 @@ def build_parser() -> argparse.ArgumentParser:
     request.add_argument("path")
     request.add_argument("--json", dest="json_body")
     request.add_argument("--form", action="append", default=[])
+
+    diagnostics = sub.add_parser("diagnostics", help="summarize structured poll diagnostics")
+    diagnostics.add_argument("--hours", type=float, default=24)
+    diagnostics.add_argument("--failures", type=int, default=0)
+    diagnostics.add_argument("--controller")
+
+    soak_start = sub.add_parser("soak-start", help="queue a status-only soak in the agent")
+    soak_start.add_argument("--duration-minutes", type=float, default=30)
+    soak_start.add_argument("--intervals", default="10,15,20,30,45,60")
+    soak_start.add_argument("--settle-seconds", default="0,0.5,1,2")
+    sub.add_parser("soak-status", help="show soak progress or the latest report")
+    sub.add_parser("soak-stop", help="stop the active soak safely")
     return parser
 
 
@@ -69,41 +84,73 @@ def main() -> None:
     if args.command == "run":
         TowelBarAgent(config).run()
     elif args.command == "scan":
-        networks = NetworkManager(config.wifi_interface).scan()
+        with WifiLock(config.wifi_interface, timeout=2):
+            networks = NetworkManager(config.wifi_interface).scan()
         print(json.dumps([asdict(item) for item in networks], indent=2))
     elif args.command == "connect":
-        controller, gateway = connect_controller(config, args.controller)
+        with WifiLock(config.wifi_interface, timeout=2):
+            controller, gateway = connect_controller(config, args.controller)
         print(json.dumps({"controller": controller.id, "gateway": gateway}, indent=2))
     elif args.command == "snapshot":
-        controller, gateway = connect_controller(config, args.controller)
-        base_url = controller.base_url or f"http://{gateway}/"
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        destination = Path(args.output) / controller.id / stamp
-        result = snapshot_portal(
-            base_url,
-            destination,
-            config.request_timeout_seconds,
-            transport=interface_transport(config.wifi_interface),
-        )
+        with WifiLock(config.wifi_interface, timeout=2):
+            controller, gateway = connect_controller(config, args.controller)
+            base_url = controller.base_url or f"http://{gateway}/"
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            destination = Path(args.output) / controller.id / stamp
+            result = snapshot_portal(
+                base_url,
+                destination,
+                config.request_timeout_seconds,
+                transport=interface_transport(config.wifi_interface),
+            )
         print(json.dumps(asdict(result), indent=2))
     elif args.command == "request":
-        controller, gateway = connect_controller(config, args.controller)
-        base_url = (controller.base_url or f"http://{gateway}/").rstrip("/")
-        data = dict(item.split("=", 1) for item in args.form)
-        body = json.loads(args.json_body) if args.json_body else None
-        with httpx.Client(
-            transport=interface_transport(config.wifi_interface),
-            timeout=config.request_timeout_seconds,
-            follow_redirects=True,
-        ) as client:
-            response = client.request(
-                args.method.upper(),
-                f"{base_url}/{args.path.lstrip('/')}",
-                json=body,
-                data=data or None,
-            )
+        with WifiLock(config.wifi_interface, timeout=2):
+            controller, gateway = connect_controller(config, args.controller)
+            base_url = (controller.base_url or f"http://{gateway}/").rstrip("/")
+            data = dict(item.split("=", 1) for item in args.form)
+            body = json.loads(args.json_body) if args.json_body else None
+            with httpx.Client(
+                transport=interface_transport(config.wifi_interface),
+                timeout=config.request_timeout_seconds,
+                follow_redirects=True,
+            ) as client:
+                response = client.request(
+                    args.method.upper(),
+                    f"{base_url}/{args.path.lstrip('/')}",
+                    json=body,
+                    data=data or None,
+                )
         print(f"HTTP {response.status_code}")
         for key, value in response.headers.items():
             print(f"{key}: {value}")
         print()
         print(response.text)
+    elif args.command == "diagnostics":
+        events = read_events(config.diagnostics.events_path, args.hours)
+        if args.failures:
+            events = [
+                event for event in events
+                if event.get("event") == "poll_attempt"
+                and not event.get("success")
+                and (not args.controller or event.get("controller_id") == args.controller)
+            ][-args.failures :]
+            print(json.dumps(events, indent=2))
+        else:
+            print(json.dumps(summarize_events(events), indent=2))
+    elif args.command.startswith("soak-"):
+        runtime = Path(
+            os.environ.get("TOWELBAR_RUNTIME_STATE", "/var/lib/towelbar-agent/runtime.json")
+        )
+        control = SoakControl(runtime.parent)
+        if args.command == "soak-start":
+            request = {
+                "duration_minutes": args.duration_minutes,
+                "intervals": [float(item) for item in args.intervals.split(",")],
+                "settle_seconds": [float(item) for item in args.settle_seconds.split(",")],
+            }
+            control.request(request)
+            control.set_status(status="queued", **request)
+        elif args.command == "soak-stop":
+            control.stop()
+        print(json.dumps(control.status(), indent=2))

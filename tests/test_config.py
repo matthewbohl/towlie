@@ -64,3 +64,37 @@ def test_example_config_loads():
     assert len(config.controllers) == 2
     assert config.controllers[0].protocol is None
     assert config.controllers[0].driver == "emmesteel"
+
+
+def test_loads_rotation_and_diagnostics_settings(tmp_path: Path):
+    config = load_config(
+        write_config(
+            tmp_path,
+            """
+poll_interval_seconds: 99
+rotation:
+  target_revisit_seconds: 20
+  settle_after_connect_seconds: 1.5
+  retry_delay_seconds: 2
+  retries: 1
+diagnostics:
+  enabled: true
+  events_path: /tmp/towelbar-events.jsonl
+  capture_network_on_failure: false
+  retention_days: 3
+  max_file_megabytes: 4
+mqtt:
+  host: mqtt.local
+controllers:
+  - id: bath
+    ssid: EMMESTEEL_TEST
+    password: test-password
+""",
+        )
+    )
+    assert config.rotation.target_revisit_seconds == 20
+    assert config.rotation.settle_after_connect_seconds == 1.5
+    assert config.rotation.retries == 1
+    assert config.diagnostics.enabled is True
+    assert config.diagnostics.events_path == "/tmp/towelbar-events.jsonl"
+    assert config.diagnostics.capture_network_on_failure is False

@@ -10,10 +10,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import AgentConfig, ControllerConfig
+from .diagnostics import AttemptTrace, DiagnosticSink
 from .emmesteel import EmmeSteelController, EmmeSteelError
 from .mqtt import HomeAssistantMqtt
-from .network import NetworkManager, interface_transport
+from .network import NetworkManager, WifiLock, interface_transport
 from .protocol import ControllerState, HttpController, ProtocolError
+from .soak import SoakControl, run_soak
 
 LOG = logging.getLogger(__name__)
 
@@ -22,6 +24,7 @@ class TowelBarAgent:
     def __init__(self, config: AgentConfig):
         self.config = config
         self.network = NetworkManager(config.wifi_interface)
+        self.diagnostics = DiagnosticSink(config.diagnostics)
         self.stop_event = threading.Event()
         self.wake_event = threading.Event()
         self.mqtt = HomeAssistantMqtt(config, on_command=self.wake_event.set)
@@ -38,24 +41,52 @@ class TowelBarAgent:
                 "TOWELBAR_RUNTIME_STATE", "/var/lib/towelbar-agent/runtime.json"
             )
         )
+        self.soak_control = SoakControl(self.runtime_path.parent)
+        self.last_attempt_started: dict[str, float] = {}
         self._load_runtime_state()
 
     def run(self) -> None:
         signal.signal(signal.SIGTERM, self._stop)
         signal.signal(signal.SIGINT, self._stop)
         self.mqtt.start()
+        next_due = {controller.id: 0.0 for controller in self.config.controllers}
         try:
             while not self.stop_event.is_set():
+                soak_request = self.soak_control.take_request()
+                if soak_request:
+                    run_soak(
+                        self.config,
+                        self.network,
+                        self.mqtt,
+                        DiagnosticSink(self.config.diagnostics, force=True),
+                        self.soak_control,
+                        soak_request,
+                        self.stop_event,
+                        self.timer_settings,
+                    )
+                    now = time.monotonic()
+                    next_due = {controller.id: now for controller in self.config.controllers}
+                    continue
                 pending = self.mqtt.pending_controller_ids()
-                controllers = sorted(
+                controller = min(
                     self.config.controllers,
-                    key=lambda item: item.id not in pending,
+                    key=lambda item: (
+                        item.id not in pending,
+                        next_due[item.id],
+                    ),
                 )
-                for controller in controllers:
-                    if self.stop_event.is_set():
-                        break
-                    self.poll(controller)
-                self.wake_event.wait(self.config.poll_interval_seconds)
+                wait_seconds = 0 if controller.id in pending else max(
+                    0, next_due[controller.id] - time.monotonic()
+                )
+                if wait_seconds:
+                    self.wake_event.wait(wait_seconds)
+                    self.wake_event.clear()
+                    continue
+                started = time.monotonic()
+                self.poll(controller)
+                next_due[controller.id] = (
+                    started + self.config.rotation.target_revisit_seconds
+                )
                 self.wake_event.clear()
         finally:
             self.mqtt.stop()
@@ -66,54 +97,101 @@ class TowelBarAgent:
 
     def poll(self, controller: ControllerConfig) -> None:
         LOG.info("Connecting to %s (%s)", controller.name, controller.ssid)
-        try:
-            gateway = self.network.connect(
+        started = time.monotonic()
+        previous = self.last_attempt_started.get(controller.id)
+        self.last_attempt_started[controller.id] = started
+        last_error: Exception | None = None
+        for attempt in range(self.config.rotation.retries + 1):
+            trace = AttemptTrace(
+                self.diagnostics,
+                controller.id,
                 controller.ssid,
-                controller.password,
-                self.config.connect_timeout_seconds,
-            )
-            if controller.driver == "emmesteel":
-                self._poll_emmesteel(controller, gateway)
-                return
-            if controller.protocol is None:
-                self.mqtt.publish_state(
-                    controller, None, "discovery_required", "protocol is not configured"
-                )
-                return
-            base_url = controller.base_url or f"http://{gateway}/"
-            client = HttpController(
-                base_url,
-                controller.protocol,
-                self.config.request_timeout_seconds,
-                transport=interface_transport(self.config.wifi_interface),
+                attempt=attempt + 1,
+                actual_revisit_seconds=(
+                    round(started - previous, 3) if previous is not None else None
+                ),
+                target_revisit_seconds=self.config.rotation.target_revisit_seconds,
             )
             try:
-                commands = self.mqtt.drain_for(controller.id)
-                self._apply_commands(client, commands)
-                state = client.status()
-                self.mqtt.confirm(controller.id)
-                self._record_state(controller.id, state)
-                self.mqtt.publish_state(controller, state, "online")
-            finally:
-                client.close()
-        except Exception as exc:
-            LOG.exception("Poll failed for %s", controller.id)
-            cached = self._trusted_cached_state(controller.id)
-            self.mqtt.publish_state(
-                controller,
-                cached[1] if cached else None,
-                "stale" if cached else "error",
-                str(exc),
-                observed_at=cached[0] if cached else None,
-            )
+                with WifiLock(
+                    self.config.wifi_interface,
+                    self.config.connect_timeout_seconds + 2,
+                ):
+                    self._poll_once(controller, trace)
+                trace.finish(True)
+                return
+            except Exception as exc:
+                last_error = exc
+                if self.config.diagnostics.capture_network_on_failure:
+                    try:
+                        trace.update(failure_network=self.network.snapshot(include_details=True))
+                    except Exception as snapshot_exc:
+                        trace.update(snapshot_error=str(snapshot_exc))
+                trace.finish(False, exc)
+                LOG.exception(
+                    "Poll attempt %s/%s failed for %s during %s",
+                    attempt + 1,
+                    self.config.rotation.retries + 1,
+                    controller.id,
+                    trace.event.get("failed_phase", "unknown"),
+                )
+                if attempt < self.config.rotation.retries:
+                    if self.stop_event.wait(self.config.rotation.retry_delay_seconds):
+                        break
+        cached = self._trusted_cached_state(controller.id)
+        self.mqtt.publish_state(
+            controller,
+            cached[1] if cached else None,
+            "stale" if cached else "error",
+            str(last_error) if last_error else "poll interrupted",
+            observed_at=cached[0] if cached else None,
+        )
 
-    def _poll_emmesteel(self, controller: ControllerConfig, gateway: str) -> None:
+    def _poll_once(self, controller: ControllerConfig, trace: AttemptTrace) -> None:
+        gateway = self.network.connect(
+            controller.ssid,
+            controller.password,
+            self.config.connect_timeout_seconds,
+            settle_seconds=self.config.rotation.settle_after_connect_seconds,
+            trace=trace,
+        )
+        if controller.driver == "emmesteel":
+            self._poll_emmesteel(controller, gateway, trace)
+            return
+        if controller.protocol is None:
+            self.mqtt.publish_state(
+                controller, None, "discovery_required", "protocol is not configured"
+            )
+            return
+        base_url = controller.base_url or f"http://{gateway}/"
+        client = HttpController(
+            base_url,
+            controller.protocol,
+            self.config.request_timeout_seconds,
+            transport=interface_transport(self.config.wifi_interface),
+        )
+        try:
+            commands = self.mqtt.drain_for(controller.id)
+            with trace.phase("http_commands"):
+                self._apply_commands(client, commands)
+            with trace.phase("http_status"):
+                state = client.status()
+            self.mqtt.confirm(controller.id)
+            self._record_state(controller.id, state)
+            self.mqtt.publish_state(controller, state, "online")
+        finally:
+            client.close()
+
+    def _poll_emmesteel(
+        self, controller: ControllerConfig, gateway: str, trace: AttemptTrace
+    ) -> None:
         base_url = controller.base_url or f"http://{gateway}/"
         client = EmmeSteelController(
             base_url,
             self.config.wifi_interface,
             self.config.request_timeout_seconds,
             controller.max_timer_minutes,
+            trace,
         )
         commands = self.mqtt.drain_for(controller.id)
         settings = self.timer_settings[controller.id]
@@ -142,6 +220,7 @@ class TowelBarAgent:
             if needs_default_timer:
                 state = client.apply({"timer_minutes": settings["minutes"]})
             self._verify_commands(state, commands)
+            trace.update(state=state.as_dict(), command_names=sorted(commands))
             self._record_state(controller.id, state)
             self.mqtt.confirm(controller.id)
             self.mqtt.publish_state(

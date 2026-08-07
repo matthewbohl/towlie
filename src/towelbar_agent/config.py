@@ -6,6 +6,8 @@ from typing import Any
 
 import yaml
 
+from .diagnostics import DiagnosticSettings
+
 
 class ConfigError(ValueError):
     pass
@@ -89,6 +91,14 @@ class MqttConfig:
 
 
 @dataclass(frozen=True)
+class RotationConfig:
+    target_revisit_seconds: float = 30
+    settle_after_connect_seconds: float = 1
+    retry_delay_seconds: float = 3
+    retries: int = 0
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     wifi_interface: str
     poll_interval_seconds: float
@@ -96,11 +106,15 @@ class AgentConfig:
     request_timeout_seconds: float
     mqtt: MqttConfig
     controllers: tuple[ControllerConfig, ...]
+    rotation: RotationConfig = field(default_factory=RotationConfig)
+    diagnostics: DiagnosticSettings = field(default_factory=DiagnosticSettings)
 
 
 def load_config(path: str | Path) -> AgentConfig:
     raw = yaml.safe_load(Path(path).read_text()) or {}
     mqtt_raw = raw.get("mqtt", {})
+    rotation_raw = raw.get("rotation", {})
+    diagnostics_raw = raw.get("diagnostics", {})
     if not mqtt_raw.get("host"):
         raise ConfigError("mqtt.host is required")
     controllers: list[ControllerConfig] = []
@@ -159,4 +173,37 @@ def load_config(path: str | Path) -> AgentConfig:
             ).strip("/"),
         ),
         controllers=tuple(controllers),
+        rotation=RotationConfig(
+            target_revisit_seconds=max(
+                1,
+                float(
+                    rotation_raw.get(
+                        "target_revisit_seconds", raw.get("poll_interval_seconds", 30)
+                    )
+                )
+            ),
+            settle_after_connect_seconds=max(
+                0, float(rotation_raw.get("settle_after_connect_seconds", 1))
+            ),
+            retry_delay_seconds=max(
+                0, float(rotation_raw.get("retry_delay_seconds", 3))
+            ),
+            retries=max(0, int(rotation_raw.get("retries", 0))),
+        ),
+        diagnostics=DiagnosticSettings(
+            enabled=bool(diagnostics_raw.get("enabled", False)),
+            events_path=str(
+                diagnostics_raw.get(
+                    "events_path",
+                    "/var/lib/towelbar-agent/diagnostics/events.jsonl",
+                )
+            ),
+            capture_network_on_failure=bool(
+                diagnostics_raw.get("capture_network_on_failure", True)
+            ),
+            retention_days=max(1, int(diagnostics_raw.get("retention_days", 7))),
+            max_file_megabytes=max(
+                1, int(diagnostics_raw.get("max_file_megabytes", 20))
+            ),
+        ),
     )

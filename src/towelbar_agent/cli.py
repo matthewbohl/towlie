@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +13,7 @@ import httpx
 
 from .agent import TowelBarAgent
 from .config import load_config
-from .diagnostics import read_events, summarize_events
+from .diagnostics import SOAK_HEADER, format_soak_event, read_events, summarize_events
 from .discovery import snapshot_portal
 from .network import NetworkManager, WifiLock, interface_transport
 from .soak import SoakControl
@@ -55,6 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
     soak_start.add_argument("--settle-seconds", default="0,0.5,1,2")
     sub.add_parser("soak-status", help="show soak progress or the latest report")
     sub.add_parser("soak-stop", help="stop the active soak safely")
+    soak_follow = sub.add_parser("soak-follow", help="follow readable live soak samples")
+    soak_follow.add_argument("--all", action="store_true", help="include existing soak samples")
     return parser
 
 
@@ -138,6 +141,9 @@ def main() -> None:
             print(json.dumps(events, indent=2))
         else:
             print(json.dumps(summarize_events(events), indent=2))
+    elif args.command == "soak-follow":
+        print(SOAK_HEADER, flush=True)
+        follow_soak(config.diagnostics.events_path, include_existing=args.all)
     elif args.command.startswith("soak-"):
         runtime = Path(
             os.environ.get("TOWELBAR_RUNTIME_STATE", "/var/lib/towelbar-agent/runtime.json")
@@ -154,3 +160,32 @@ def main() -> None:
         elif args.command == "soak-stop":
             control.stop()
         print(json.dumps(control.status(), indent=2))
+
+
+def follow_soak(path: str, include_existing: bool = False) -> None:
+    source = Path(path)
+    position = 0
+    while True:
+        try:
+            with source.open(encoding="utf-8") as stream:
+                if not include_existing and position == 0:
+                    stream.seek(0, 2)
+                elif position:
+                    stream.seek(position)
+                while True:
+                    line = stream.readline()
+                    if not line:
+                        position = stream.tell()
+                        break
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    formatted = format_soak_event(event)
+                    if formatted:
+                        print(formatted, flush=True)
+                    if event.get("event") == "soak_finished":
+                        return
+        except FileNotFoundError:
+            pass
+        time.sleep(0.25)

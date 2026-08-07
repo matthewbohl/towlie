@@ -231,3 +231,45 @@ def randomized_soak_matrix(
     matrix = [(interval, settle) for interval in intervals for settle in settle_seconds]
     random.shuffle(matrix)
     return matrix
+
+
+SOAK_HEADER = (
+    "TIME     SAMPLE CONTROLLER     RESULT          POWER LEVEL HEATING "
+    "TIMER TARGET CURRENT INTERVAL SETTLE TOTAL  SIGNAL"
+)
+
+
+def format_soak_event(event: dict[str, Any]) -> str | None:
+    if event.get("mode") != "soak" or event.get("event") != "poll_attempt":
+        return None
+    state = event.get("state", {})
+    result = "OK" if event.get("success") else f"FAIL@{event.get('failed_phase', 'unknown')}"
+    signal = event.get("network", {}).get("signal")
+    if signal is None:
+        signal = event.get("failure_network", {}).get("signal")
+    power = state.get("power")
+    power_text = "on" if power is True else "off" if power is False else "?"
+    heating = state.get("heating")
+    heating_text = "yes" if heating is True else "no" if heating is False else "?"
+    current = state.get("current_temperature")
+    fields = [
+        str(event.get("timestamp", ""))[11:19] or "?",
+        f"#{int(event.get('sample', 0)):03d}",
+        str(event.get("controller_id", "?"))[:14],
+        result[:15],
+        power_text,
+        str(state.get("heat_level", "?")),
+        heating_text,
+        f"{state.get('timer_minutes', '?')}m",
+        f"{state.get('target_temperature', '?')}C",
+        "-" if current is None else f"{current}C",
+        f"{event.get('switch_interval_seconds', '?')}s",
+        f"{event.get('settle_seconds', '?')}s",
+        f"{round(float(event.get('total_ms', 0)) / 1000, 1)}s",
+        str(signal if signal is not None else "?"),
+    ]
+    widths = [8, 6, 14, 15, 5, 5, 7, 6, 7, 7, 8, 6, 6, 6]
+    line = " ".join(value.ljust(width) for value, width in zip(fields, widths)).rstrip()
+    if event.get("error"):
+        line += f"  {event['error']}"
+    return line

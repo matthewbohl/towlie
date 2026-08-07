@@ -4,6 +4,7 @@ from towelbar_agent.diagnostics import (
     DiagnosticSink,
     read_events,
     summarize_events,
+    format_soak_event,
 )
 from towelbar_agent.soak import SoakControl
 
@@ -57,3 +58,34 @@ def test_soak_summary_groups_test_combinations():
     combination = summary["soak_combinations"]["bath|interval=30|settle=1"]
     assert combination["success_rate_percent"] == 100
     assert combination["metrics"]["signal"]["p50"] == 75
+
+
+def test_formats_readable_soak_status_line():
+    line = format_soak_event(
+        {
+            "event": "poll_attempt",
+            "timestamp": "2026-08-07T16:30:11+00:00",
+            "mode": "soak",
+            "sample": 3,
+            "controller_id": "primary_bath",
+            "success": True,
+            "switch_interval_seconds": 30,
+            "settle_seconds": 1,
+            "total_ms": 4200,
+            "network": {"signal": 35},
+            "state": {
+                "power": False,
+                "heat_level": 0,
+                "heating": False,
+                "timer_minutes": 0,
+                "target_temperature": 70,
+                "current_temperature": None,
+            },
+        }
+    )
+    assert line is not None
+    assert "#003" in line
+    assert "primary_bath" in line
+    assert "off" in line
+    assert "30s" in line
+    assert "35" in line

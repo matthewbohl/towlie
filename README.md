@@ -348,6 +348,9 @@ sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
 
 sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
   --config /etc/towelbar-agent/config.yaml soak-status
+
+sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
+  --config /etc/towelbar-agent/config.yaml soak-follow
 ```
 
 The matrix is randomized to reduce time-of-day bias. The report groups results
@@ -356,6 +359,10 @@ rate, failure phase, consecutive failures, signal, actual revisit time, and
 p50/p95 latency. Soak probes never send power, temperature, heat-level, or timer
 commands. Home Assistant commands received during a soak remain pending until
 normal rotation resumes. Stop a running test safely with `soak-stop`.
+`soak-follow` prints one readable row per sample, including connection result,
+power, heat level, heating activity, timer, temperatures, test interval,
+settling delay, latency, and Wi-Fi signal. Add `--all` to replay existing soak
+samples before following new ones.
 
 ## Discovery and MCP tools
 

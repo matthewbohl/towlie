@@ -1,120 +1,147 @@
-# Towel Bar Agent
+# Towlie
 
 ```text
-                       __..----..__
-                  _.-'  :::::::::  `-._
-               .-'  :::::::::::::::::  `-.
-              /  :::::::::::::::::::::::  \
-             / ::::::  .------. .------. ::\
-            | ::::::  /  _     V     _  \ ::|
-            | :::::: |  (_)         (_)  |:: |
-            | ::::::  \      .-.      /  :: |
-            | :::::::  `----'   `----' ::::: |
-            | :::::::::     .---.      ::::: |
-       _    | :::::::::    / ___ \     ::::: |    _
-     _/ `---| :::::::::   | (___) |    ::::: |---' \_
-    (___     \ :::::::::   \_____/    ::::: /     ___)
-        `--.  \ ::::::::::::::::::::: /  .--'
-            \  `:::::::::::::::::::::'  /
-             | ::::::::::::::::::::::: |
-             | ::::::::::::::::::::::: |
-             | ::::::::::::::::::::::: |
-             | ::::::::::::::::::::::: |
-             '._:::::::::::::::::::::_.'
-                `--.__::::::::__.--'
-                      |  |  |  |
-                    __|  |  |  |__
-                   /_____/  \_____\
+                         _..--------.._
+                    _.-'::::::::::::::::'-._
+                 .-'::::::::::::::::::::::::'-.
+               .'::::::::::::::::::::::::::::::'.
+              /::::::::::::::::::::::::::::::::::\
+             /::::::::: .------.  .------. :::::::: \
+            |::::::::: /  ____  \/  ____  \ :::::::::|
+            |:::::::: |  /    \    /    \  | ::::::::|
+            |:::::::: |  \_o__/    \__o_/  | ::::::::|
+            |::::::::: \      .--.      /  ::::::::::|
+            |:::::::::: '----'    '----' ::::::::::::|
+            |:::::::::::::    .--.     ::::::::::::::|
+       __   |::::::::::::    / __ \     :::::::::::::|   __
+    __/  \__|:::::::::::    | /  \ |     ::::::::::::|__/  \__
+   /__    __|:::::::::::     \ \__/ /     ::::::::::::|__    __\
+      \__/  |::::::::::::     '.__.'     :::::::::::::|  \__/
+            |:::::::::::::::::::::::::::::::::::::::::|
+            |:::::::::::::::::::::::::::::::::::::::::|
+            |:::::::::::::::::::::::::::::::::::::::::|
+            |:::::::::::::::::::::::::::::::::::::::::|
+            |:::::::::::::::::::::::::::::::::::::::::|
+            '-----------------------------------------'
+                       |  |            |  |
+                    ___|  |            |  |___
+                   /______/            \______\
 
-                    "Wanna get dry?"
+                         "Wanna get dry?"
 ```
 
-`towelbar-agent` turns an Ethernet-connected Raspberry Pi with one Wi-Fi
-adapter into a rotating controller for Amba TDHC/TDHCR heated towel bars.
-The Wi-Fi adapter associates with each `emmesteel...` hotspot in turn, reads
-state, applies queued commands, and moves on. MQTT remains reachable through
-Ethernet and Home Assistant entities are created using MQTT discovery.
+Towlie connects Amba/EmmeSteel heated towel bars to Home Assistant through
+MQTT. It is designed for a Raspberry Pi connected to the home network by
+Ethernet, with Wi-Fi reserved for connecting to each towel bar's private
+hotspot.
 
-The HTTP protocol is deliberately configuration-driven because the exact
-TDHC endpoints have not yet been captured. The same package includes a CLI
-and an optional MCP server for discovering those endpoints from the Pi.
+## What it does
 
-Discovered EmmeSteel controllers can use the built-in `emmesteel` driver. It
-reads state and applies power, level, and temperature changes over the local
-WebSocket, and controls the hardware countdown through `/timerSet`. All
-controller sockets are pinned to the configured Wi-Fi interface, including
-when Ethernet and the captive network use overlapping IPv4 subnets.
+- Discovers every configured towel bar as a separate Home Assistant device.
+- Controls power, heat level, target temperature, and countdown duration.
+- Reports current temperature, heating activity, remaining time, connection
+  status, and pending commands.
+- Rotates one Wi-Fi adapter between multiple towel-bar hotspots while MQTT
+  remains available through Ethernet.
+- Applies a hardware countdown after a towel bar is turned on, including when
+  it is turned on from its physical button.
+- Queues Home Assistant commands until the relevant towel bar is reachable,
+  then reads the device again before reporting the command as complete.
 
-Python 3.10 or newer is supported. The project targets current Raspberry Pi OS
-Trixie and also supports Raspberry Pi OS Bookworm.
+The default safety timer is 120 minutes and the default maximum configurable
+timer is 240 minutes. The countdown runs on the towel bar itself, so shutdown
+does not depend on Home Assistant staying online.
 
-## Architecture and constraints
+## Requirements
 
-```text
-Home Assistant ── MQTT ── Ethernet ── Raspberry Pi
-                                          │
-                                  rotating wlan0
-                                      ┌───┴───┐
-                                   TDHC A   TDHC B
-```
+- Raspberry Pi OS Bookworm or Trixie
+- Ethernet connection to the home network
+- One NetworkManager-controlled Wi-Fi adapter, normally `wlan0`
+- Python 3.10 or newer
+- An MQTT broker reachable over Ethernet
+- Home Assistant with the MQTT integration enabled
 
-- Raspberry Pi OS Bookworm and Trixie use NetworkManager to rotate `wlan0`.
-- Ethernet must carry the Pi's default route. The generated Wi-Fi profiles
-  have `ipv4.never-default=yes`, preventing captive hotspots from hijacking it.
-- Only one towel bar is immediately reachable at a time. Home Assistant
-  commands remain queued until that controller's next turn.
-- If two controllers use identical SSIDs, give their NetworkManager profiles
-  distinct BSSIDs manually or use separate Wi-Fi adapters. Serial-numbered
-  SSIDs normally avoid this.
-- A protocol-free controller can be scanned and snapshotted but cannot yet be
-  controlled.
+Ethernet must remain the Pi's default route. Towlie pins controller traffic to
+`wlan0`, so it also works when the Ethernet LAN and towel-bar hotspot both use
+`192.168.1.0/24`.
 
-## Install on Raspberry Pi OS
+## First installation
 
-Use the current 64-bit Raspberry Pi OS Lite image when the hardware supports
-it. Trixie and Bookworm are supported. Bullseye is not supported because it
-uses `dhcpcd` instead of NetworkManager by default.
-
-First configure Ethernet and verify that it remains reachable while Wi-Fi
-changes. Clone/copy this repository to the Pi, then:
+Clone the repository on the Raspberry Pi and run the installer with dependency
+installation enabled:
 
 ```bash
-sudo bash scripts/install-raspberry-pi-os.sh --install-dependencies
+git clone https://github.com/matthewbohl/towlie.git
+cd towlie
+sudo ./scripts/install-raspberry-pi-os.sh --install-dependencies
+```
+
+The installer creates:
+
+- Application and virtual environment: `/opt/towelbar-agent`
+- Configuration: `/etc/towelbar-agent/config.yaml`
+- Runtime state: `/var/lib/towelbar-agent/runtime.json`
+- Locked-down service account: `towelbar`
+- Systemd service: `towelbar-agent.service`
+- A narrowly scoped NetworkManager polkit rule
+
+It preserves an existing `config.yaml` during later upgrades.
+
+## Configure MQTT
+
+Towlie publishes MQTT Discovery messages; it does not require custom Home
+Assistant YAML.
+
+If using the Mosquitto broker add-on in Home Assistant:
+
+1. Create a dedicated Home Assistant user for Towlie, such as `towelbar`.
+2. Give the user a strong password.
+3. Use the Home Assistant host's Ethernet IP as the MQTT host.
+4. Confirm the Pi can reach TCP port `1883` on that address.
+
+Edit the Pi configuration:
+
+```bash
 sudoedit /etc/towelbar-agent/config.yaml
 ```
 
-The installer verifies the Raspberry Pi OS release and NetworkManager service,
-then creates a locked-down `towelbar` service account, a Python virtual
-environment, a narrowly scoped NetworkManager polkit rule, and the systemd
-unit. It does not start the service with the placeholder configuration.
-It installs the `polkitd` package directly; the older `policykit-1`
-transitional package is not available on Trixie.
+Start with:
 
-Dependency installation is opt-in. Omit `--install-dependencies` when updating
-an existing installation whose OS and Python dependencies are already present.
-Without the flag, the installer does not run `apt-get`, upgrade pip, invoke a
-Python build backend, or resolve Python dependencies. It verifies that the
-required modules already exist, copies the application into the established
-virtual environment, and refreshes its command launchers. A first-time install
-must use `--install-dependencies`.
+```yaml
+wifi_interface: wlan0
+poll_interval_seconds: 30
+connect_timeout_seconds: 20
+request_timeout_seconds: 8
 
-Configure an MQTT user in the Home Assistant MQTT broker, place those
-credentials in `config.yaml`, and enable the service:
-
-```bash
-sudo systemctl enable --now towelbar-agent
-sudo journalctl -u towelbar-agent -f
+mqtt:
+  host: 192.168.1.10
+  port: 1883
+  username: towelbar
+  password: replace-with-mqtt-password
+  topic_prefix: towelbar
+  discovery_prefix: homeassistant
 ```
 
-Home Assistant's MQTT integration should be configured through
-**Settings → Devices & services**. The agent publishes native switch, number,
-timestamp, and diagnostic entities through MQTT discovery; no Home Assistant
-YAML or `.storage` edits are required.
+The MQTT host must be reachable through Ethernet while Wi-Fi changes networks.
+Do not commit the real configuration file; it contains MQTT and hotspot
+credentials.
 
-For an EmmeSteel controller, configure:
+## Configure towel bars
+
+Add one entry for every towel bar:
 
 ```yaml
 controllers:
+  - id: primary_bath
+    name: Primary Bathroom Towel Bar
+    ssid: EMMESTEEL_EL2_890_25_0069
+    password: replace-with-controller-password
+    driver: emmesteel
+    base_url: http://192.168.1.1/
+    default_timer_enabled: true
+    default_timer_minutes: 120
+    max_timer_minutes: 240
+
   - id: guest_bath
     name: Guest Bathroom Towel Bar
     ssid: EMMESTEEL_24TS001267
@@ -126,122 +153,122 @@ controllers:
     max_timer_minutes: 240
 ```
 
-The agent exposes every configured EmmeSteel controller through MQTT Discovery
-with power, power level, target temperature, current temperature, heating,
-countdown, default-timer, and diagnostics entities. Commands are coalesced
-while the Pi rotates between hotspots. A retained pending sensor turns on as
-soon as Home Assistant queues a command and clears only after the controller
-has been updated and read back.
+Controller IDs must be unique. EmmeSteel SSIDs are also recognized
+automatically, but declaring `driver: emmesteel` makes the configuration clear.
 
-Power is safe despite the controller's toggle-only protocol: the agent reads
-the current state before sending `on-off`. Timer duration is expressed in
-minutes and capped by `max_timer_minutes`. When default timer mode is enabled,
-an Home Assistant power-on command arms the controller's hardware countdown in
-the same poll. On every poll, an already-on towel bar with no active hardware
-timer is armed with the configured default. This covers physical button
-presses, missed transitions, agent restarts, and Home Assistant having no prior
-state. Runtime timer settings and the last confirmed state of every controller
-are written atomically to `/var/lib/towelbar-agent/runtime.json`. After a
-restart or polling failure, a cached controller state is trusted for at most 30
-minutes. Older state is discarded and published as unknown rather than being
-used as current truth. Unconfirmed commands are not blindly replayed from disk.
+The hardware timer accepts hours and minutes. Towlie exposes a single duration
+in minutes, validates it against `max_timer_minutes`, and converts it safely.
+When default-timer mode is enabled, any powered-on towel bar without an active
+hardware timer is assigned the configured default on its next poll.
 
-## Deploy from another computer
+## Start the agent
 
-Run from the project directory:
+After saving the configuration:
+
+```bash
+sudo systemctl enable --now towelbar-agent
+sudo systemctl status towelbar-agent
+sudo journalctl -u towelbar-agent -f
+```
+
+The agent connects to MQTT, publishes Home Assistant Discovery records, and
+begins rotating between configured towel bars.
+
+## Configure Home Assistant
+
+In Home Assistant:
+
+1. Open **Settings → Devices & services**.
+2. Add or open the **MQTT** integration.
+3. Configure it to use the same broker as Towlie.
+4. Open **MQTT → Devices** and look for each configured towel-bar name.
+
+Each EmmeSteel device normally exposes:
+
+- Power switch
+- Heat-level control (`0–5`)
+- Target-temperature control (`30–70 °C`)
+- Current-temperature sensor
+- Heating-status sensor
+- Countdown duration
+- Default-timer switch and duration
+- Last-seen, connection, and command-pending diagnostics
+
+Commands may remain pending while the Pi is connected to another towel bar.
+The pending sensor clears only after Towlie reconnects, applies the command,
+and confirms the resulting state.
+
+Towlie stores the last confirmed state atomically. After a restart or polling
+failure, cached state is trusted for no more than 30 minutes. Older state is
+reported as unknown.
+
+## Updating from another computer
+
+From a local checkout, run:
 
 ```bash
 ./scripts/deploy-to-pi.sh
 ```
 
-The script rebuilds `towelbar-agent-raspberry-pi.zip` from the current workspace,
-then prompts for the Pi host, SSH user, and whether dependencies should
-be refreshed. `scp`, `ssh`, and remote `sudo` remain interactive, so required
-passwords are entered directly into those programs and are not stored. The
-script uploads the archive, runs the remote installer, restarts the agent, and
-shows its systemd status. Reconnect a running stdio MCP client after deployment
-so it launches the updated executable.
+The script:
 
-## Discovery workflow
+1. Builds a fresh installer archive from the checkout.
+2. Prompts for the Pi hostname and SSH user.
+3. Uploads the archive.
+4. Runs the installer remotely.
+5. Restarts the agent and displays its systemd status.
 
-Copy `config.example.yaml` and list every controller, initially without its
-`protocol` section. On the Pi:
+SSH and remote `sudo` request passwords interactively. The deployment script
+does not accept or store passwords. Answer `y` to the dependency prompt only
+for a first installation or dependency refresh.
+
+## Troubleshooting
+
+Follow the service log:
+
+```bash
+sudo journalctl -u towelbar-agent -f
+```
+
+Scan for visible towel bars:
 
 ```bash
 sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
   --config /etc/towelbar-agent/config.yaml scan
-
-sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
-  --config /etc/towelbar-agent/config.yaml snapshot primary_bath \
-  --output /var/lib/towelbar-agent/captures
 ```
 
-`snapshot` connects to the controller, derives its web-server address from the
-DHCP gateway, saves the landing page and same-origin JavaScript/CSS, and writes
-`snapshot.json` with candidate API paths.
-
-Inspect the result:
+Check the Wi-Fi interface and routes:
 
 ```bash
-rg -n -i 'fetch|xmlhttprequest|status|power|heat|timer|count' \
-  /var/lib/towelbar-agent/captures
+nmcli device show wlan0
+ip -4 address show dev wlan0
+ip -4 route show dev wlan0
 ```
 
-Probe a candidate with a read-only request first:
+Common issues:
 
-```bash
-sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
-  --config /etc/towelbar-agent/config.yaml \
-  request primary_bath GET /api/status
-```
+- **No Home Assistant device:** verify MQTT credentials, broker reachability,
+  and `discovery_prefix: homeassistant`.
+- **Controller remains offline:** verify its SSID, password, signal strength,
+  and that NetworkManager owns `wlan0`.
+- **Commands are delayed:** this is expected during rotation; check the pending
+  sensor and reduce `poll_interval_seconds` if appropriate.
+- **Installer reports missing modules:** rerun it with
+  `--install-dependencies`.
 
-Explicit mutations are supported after identifying the request:
+## Discovery tools
 
-```bash
-sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
-  --config /etc/towelbar-agent/config.yaml \
-  request primary_bath POST /api/power --form power=1
-```
-
-The paths and field names above are examples, not claims about the TDHC API.
-Promote verified requests into that controller's `protocol` section. Supported
-encodings are `none`, `query`, `form`, and `json`. `{value}` is substituted in
-configured values. Status responses are expected to be JSON and use dotted
-paths such as `device.power`; numeric list components are supported.
-
-## MCP experiment
-
-Install with the `mcp` optional dependency (the Raspberry Pi OS installer does)
-and configure an MCP client to launch:
-
-```json
-{
-  "mcpServers": {
-    "towelbar-discovery": {
-      "command": "/opt/towelbar-agent/venv/bin/towelbar-mcp",
-      "env": {
-        "TOWELBAR_CONFIG": "/etc/towelbar-agent/config.yaml"
-      }
-    }
-  }
-}
-```
-
-The stdio server offers:
+The optional MCP server exposes read-only Wi-Fi scanning and portal capture,
+plus explicit HTTP exploration:
 
 - `wifi_scan`
 - `portal_snapshot`
 - `http_request`
 
-When launched through SSH with `sudo -u towelbar`, the server automatically
-switches away from an inherited working directory that the service account
-cannot read. Set `TOWELBAR_WORKDIR` to override its normal
-`/var/lib/towelbar-agent` working directory.
-
-`http_request` intentionally requires an explicit controller, method, and path.
-An MCP client should ask before invoking a state-changing method. Run the MCP
-server as the `towelbar` account so its NetworkManager permission and capture
-directory match the daemon.
+Launch it with `/opt/towelbar-agent/venv/bin/towelbar-mcp` and set
+`TOWELBAR_CONFIG=/etc/towelbar-agent/config.yaml`. State-changing exploratory
+requests should be made only after confirming the controller endpoint and
+payload.
 
 ## Development
 
@@ -250,6 +277,3 @@ python3 -m venv .venv
 .venv/bin/pip install -e '.[test,mcp]'
 .venv/bin/pytest
 ```
-
-Never commit the real `/etc/towelbar-agent/config.yaml`; it contains hotspot and
-MQTT credentials.

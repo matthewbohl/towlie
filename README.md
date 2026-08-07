@@ -353,7 +353,9 @@ sudo -u towelbar /opt/towelbar-agent/venv/bin/towelbar-agent \
   --config /etc/towelbar-agent/config.yaml soak-follow
 ```
 
-The matrix is randomized to reduce time-of-day bias. The report groups results
+The matrix is randomized to reduce time-of-day bias. Each requested interval is
+applied before its sample, and both requested and actual switch intervals are
+recorded. The report groups results
 by controller, switch interval, and post-association settling time, with success
 rate, failure phase, consecutive failures, signal, actual revisit time, and
 p50/p95 latency. Soak probes never send power, temperature, heat-level, or timer

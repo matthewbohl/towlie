@@ -152,7 +152,7 @@ def summarize_events(events: list[dict[str, Any]]) -> dict[str, Any]:
     for item in attempts:
         controller = str(item.get("controller_id", "unknown"))
         groups.setdefault(controller, []).append(item)
-        if item.get("mode") == "soak":
+        if item.get("mode") == "soak" and item.get("switch_interval_seconds") is not None:
             key = (
                 f"{controller}|interval={item.get('switch_interval_seconds')}"
                 f"|settle={item.get('settle_seconds')}"
@@ -179,6 +179,7 @@ def _aggregate(attempts: list[dict[str, Any]]) -> dict[str, Any]:
         "websocket_handshake": [],
         "first_state": [],
         "actual_revisit_seconds": [],
+        "actual_switch_interval_seconds": [],
         "signal": [],
     }
     successes = 0
@@ -195,6 +196,10 @@ def _aggregate(attempts: list[dict[str, Any]]) -> dict[str, Any]:
             metrics["total"].append(float(item["total_ms"]))
         if isinstance(item.get("actual_revisit_seconds"), (int, float)):
             metrics["actual_revisit_seconds"].append(float(item["actual_revisit_seconds"]))
+        if isinstance(item.get("actual_switch_interval_seconds"), (int, float)):
+            metrics["actual_switch_interval_seconds"].append(
+                float(item["actual_switch_interval_seconds"])
+            )
         signal = item.get("network", {}).get("signal")
         if isinstance(signal, (int, float)):
             metrics["signal"].append(float(signal))
@@ -263,6 +268,7 @@ def format_soak_event(event: dict[str, Any]) -> str | None:
         if current is None
         else f"{current}C"
     )
+    requested_interval = event.get("switch_interval_seconds")
     fields = [
         str(event.get("timestamp", ""))[11:19] or "?",
         f"#{int(event.get('sample', 0)):03d}",
@@ -275,7 +281,7 @@ def format_soak_event(event: dict[str, Any]) -> str | None:
         f"{state.get('timer_minutes', '?')}m",
         f"{state.get('target_temperature', '?')}C",
         current_text,
-        f"{event.get('switch_interval_seconds', '?')}s",
+        "warmup" if requested_interval is None else f"{requested_interval}s",
         f"{event.get('settle_seconds', '?')}s",
         f"{round(float(event.get('total_ms', 0)) / 1000, 1)}s",
         str(signal if signal is not None else "?"),

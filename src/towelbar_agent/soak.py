@@ -83,6 +83,7 @@ def run_soak(
     deadline = time.monotonic() + duration_minutes * 60
     sample = 0
     last_started: dict[str, float] = {}
+    last_switch_started: float | None = None
     control.set_status(
         status="running",
         started_at=started_wall.isoformat(),
@@ -101,10 +102,20 @@ def run_soak(
     )
     while time.monotonic() < deadline and not stop_event.is_set() and not control.should_stop():
         controller = config.controllers[sample % len(config.controllers)]
-        interval, settle = matrix[sample % len(matrix)]
+        if sample == 0:
+            interval = None
+            settle = config.rotation.settle_after_connect_seconds
+        else:
+            interval, settle = matrix[(sample - 1) % len(matrix)]
+            if _wait(stop_event, control, min(deadline, time.monotonic() + interval)):
+                break
+        if time.monotonic() >= deadline:
+            break
         now = time.monotonic()
         revisit = now - last_started[controller.id] if controller.id in last_started else None
+        switch_elapsed = now - last_switch_started if last_switch_started is not None else None
         last_started[controller.id] = now
+        last_switch_started = now
         trace = AttemptTrace(
             sink,
             controller.id,
@@ -112,6 +123,9 @@ def run_soak(
             mode="soak",
             sample=sample + 1,
             switch_interval_seconds=interval,
+            actual_switch_interval_seconds=(
+                round(switch_elapsed, 3) if switch_elapsed is not None else None
+            ),
             settle_seconds=settle,
             actual_revisit_seconds=round(revisit, 3) if revisit is not None else None,
             status_only=True,
@@ -158,10 +172,6 @@ def run_soak(
             mqtt.publish_state(controller, None, "error", str(exc))
         sample += 1
         control.set_status(samples=sample, last_controller=controller.id)
-        wait_until = min(deadline, time.monotonic() + interval)
-        while time.monotonic() < wait_until:
-            if stop_event.wait(min(1, wait_until - time.monotonic())) or control.should_stop():
-                break
 
     stopped = stop_event.is_set() or control.should_stop()
     events = [
@@ -192,3 +202,10 @@ def _numbers(value: Any, minimum: float, maximum: float) -> list[float]:
     if not result or any(item < minimum or item > maximum for item in result):
         raise ValueError(f"soak values must be between {minimum} and {maximum}")
     return result
+
+
+def _wait(stop_event: Event, control: SoakControl, deadline: float) -> bool:
+    while time.monotonic() < deadline:
+        if stop_event.wait(min(1, deadline - time.monotonic())) or control.should_stop():
+            return True
+    return False

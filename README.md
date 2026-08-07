@@ -360,7 +360,7 @@ p50/p95 latency. Soak probes never send power, temperature, heat-level, or timer
 commands. Home Assistant commands received during a soak remain pending until
 normal rotation resumes. Stop a running test safely with `soak-stop`.
 `soak-follow` prints one readable row per sample, including connection result,
-power, heat level, heating activity, timer, temperatures, test interval,
+raw power flag, target setting (heat level 0–5), heating activity, timer, temperatures, test interval,
 settling delay, latency, and Wi-Fi signal. Add `--all` to replay existing soak
 samples before following new ones.
 

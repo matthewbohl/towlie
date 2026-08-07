@@ -30,6 +30,7 @@ class HomeAssistantMqtt:
         self.on_command = on_command
         self.commands: queue.Queue[Command] = queue.Queue()
         self._pending: set[str] = set()
+        self._command_failures: dict[str, int] = {}
         self._pending_lock = threading.Lock()
         self.client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
@@ -127,6 +128,7 @@ class HomeAssistantMqtt:
             self.commands.put(Command(controller_id, field, value))
             with self._pending_lock:
                 self._pending.add(controller_id)
+                self._command_failures.pop(controller_id, None)
             self.publish(
                 f"{self.config.mqtt.topic_prefix}/{controller_id}/pending",
                 "ON",
@@ -153,9 +155,38 @@ class HomeAssistantMqtt:
             self.commands.put(command)
         return selected
 
-    def requeue(self, controller_id: str, commands: dict[str, Any]) -> None:
+    def requeue(self, controller_id: str, commands: dict[str, Any]) -> bool:
+        """Requeue a failed command a bounded number of times.
+
+        A device that does not acknowledge a change must not monopolize the
+        Wi-Fi interface indefinitely.  The caller publishes the last error;
+        this method clears the pending flag once the command retry budget is
+        exhausted.
+        """
+        with self._pending_lock:
+            failures = self._command_failures.get(controller_id, 0) + 1
+            self._command_failures[controller_id] = failures
+            if failures > self.config.rotation.command_retries:
+                self._pending.discard(controller_id)
+                self._command_failures.pop(controller_id, None)
+                exhausted = True
+            else:
+                exhausted = False
+        if exhausted:
+            LOG.error(
+                "Command for %s abandoned after %s failed confirmations",
+                controller_id,
+                failures,
+            )
+            self.publish(
+                f"{self.config.mqtt.topic_prefix}/{controller_id}/pending",
+                "OFF",
+                retain=True,
+            )
+            return False
         for field, value in commands.items():
             self.commands.put(Command(controller_id, field, value))
+        return True
 
     def pending_controller_ids(self) -> set[str]:
         with self._pending_lock:
@@ -164,6 +195,7 @@ class HomeAssistantMqtt:
     def confirm(self, controller_id: str) -> None:
         with self._pending_lock:
             self._pending.discard(controller_id)
+            self._command_failures.pop(controller_id, None)
         self.publish(
             f"{self.config.mqtt.topic_prefix}/{controller_id}/pending",
             "OFF",

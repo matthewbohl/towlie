@@ -160,6 +160,7 @@ rotation:
   settle_after_connect_seconds: 1
   retry_delay_seconds: 3
   retries: 0
+  command_retries: 2
 
 diagnostics:
   enabled: true

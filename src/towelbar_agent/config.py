@@ -96,6 +96,7 @@ class RotationConfig:
     settle_after_connect_seconds: float = 1
     retry_delay_seconds: float = 3
     retries: int = 0
+    command_retries: int = 2
 
 
 @dataclass(frozen=True)
@@ -189,6 +190,7 @@ def load_config(path: str | Path) -> AgentConfig:
                 0, float(rotation_raw.get("retry_delay_seconds", 3))
             ),
             retries=max(0, int(rotation_raw.get("retries", 0))),
+            command_retries=max(0, int(rotation_raw.get("command_retries", 2))),
         ),
         diagnostics=DiagnosticSettings(
             enabled=bool(diagnostics_raw.get("enabled", False)),

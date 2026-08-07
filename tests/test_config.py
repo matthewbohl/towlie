@@ -77,6 +77,7 @@ rotation:
   settle_after_connect_seconds: 1.5
   retry_delay_seconds: 2
   retries: 1
+  command_retries: 3
 diagnostics:
   enabled: true
   events_path: /tmp/towelbar-events.jsonl
@@ -95,6 +96,7 @@ controllers:
     assert config.rotation.target_revisit_seconds == 20
     assert config.rotation.settle_after_connect_seconds == 1.5
     assert config.rotation.retries == 1
+    assert config.rotation.command_retries == 3
     assert config.diagnostics.enabled is True
     assert config.diagnostics.events_path == "/tmp/towelbar-events.jsonl"
     assert config.diagnostics.capture_network_on_failure is False

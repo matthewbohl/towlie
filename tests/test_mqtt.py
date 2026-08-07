@@ -48,3 +48,18 @@ def test_emmesteel_discovery_uses_climate_and_removes_raw_controls():
     assert published[raw_power] == ("", True)
     assert published[raw_target] == ("", True)
     assert published[old_current_temperature] == ("", True)
+
+
+def test_failed_command_retries_are_bounded():
+    config = load_config(Path(__file__).parents[1] / "config.example.yaml")
+    mqtt = HomeAssistantMqtt(config)
+    published = []
+    mqtt.publish = lambda *args, **kwargs: published.append((args, kwargs))
+    controller_id = config.controllers[0].id
+    mqtt._pending.add(controller_id)
+
+    assert mqtt.requeue(controller_id, {"heat_level": 3}) is True
+    assert mqtt.requeue(controller_id, {"heat_level": 3}) is True
+    assert mqtt.requeue(controller_id, {"heat_level": 3}) is False
+    assert controller_id not in mqtt.pending_controller_ids()
+    assert published[-1][0][1] == "OFF"

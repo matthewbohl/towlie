@@ -75,19 +75,24 @@ class TowelBarAgent:
                         next_due[item.id],
                     ),
                 )
-                wait_seconds = 0 if controller.id in pending else max(
-                    0, next_due[controller.id] - time.monotonic()
-                )
+                wait_seconds = max(0, next_due[controller.id] - time.monotonic())
                 if wait_seconds:
-                    self.wake_event.wait(wait_seconds)
+                    was_woken = self.wake_event.wait(wait_seconds)
                     self.wake_event.clear()
+                    if was_woken:
+                        now = time.monotonic()
+                        for controller_id in self.mqtt.pending_controller_ids():
+                            next_due[controller_id] = now
                     continue
                 started = time.monotonic()
+                # Clear before the attempt so a command arriving while the
+                # device is being polled schedules one prompt follow-up, not
+                # an unbounded immediate retry loop.
+                self.wake_event.clear()
                 self.poll(controller)
                 next_due[controller.id] = (
                     started + self.config.rotation.target_revisit_seconds
                 )
-                self.wake_event.clear()
         finally:
             self.mqtt.stop()
 

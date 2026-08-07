@@ -4,6 +4,7 @@ import base64
 import hashlib
 import os
 import socket
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode, urlparse
@@ -225,6 +226,11 @@ class EmmeSteelController:
 
         if "timer_minutes" in desired:
             self.set_timer(int(desired["timer_minutes"]))
+        # The controller applies WebSocket button presses asynchronously.  A
+        # short pause before opening the read-back socket avoids treating the
+        # preceding state as a failed command.
+        if desired:
+            time.sleep(1)
         return self.status()
 
     def set_timer(self, minutes: int) -> None:

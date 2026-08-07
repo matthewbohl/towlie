@@ -97,6 +97,11 @@ class HomeAssistantMqtt:
                 if raw.upper() not in {"ON", "OFF"}:
                     raise ValueError("power must be ON or OFF")
                 value = raw.upper() == "ON"
+            elif field == "mode":
+                if raw.lower() not in {"heat", "off"}:
+                    raise ValueError("mode must be heat or off")
+                field = "power"
+                value = raw.lower() == "heat"
             elif field in {
                 "heat_level",
                 "timer_minutes",
@@ -175,6 +180,57 @@ class HomeAssistantMqtt:
             "model": "TDHC/TDHCR",
         }
         availability = {"availability_topic": f"{base}/availability"}
+        if controller.driver == "emmesteel":
+            unique = f"towelbar_{controller.id}_climate"
+            self.publish(
+                f"{discovery}/climate/{unique}/config",
+                {
+                    "name": "Climate",
+                    "unique_id": unique,
+                    "object_id": unique,
+                    "device": device,
+                    **availability,
+                    "mode_command_topic": f"{base}/{controller.id}/set/mode",
+                    "mode_state_topic": f"{base}/{controller.id}/state",
+                    "mode_state_template": (
+                        "{{ 'heat' if value_json.power == 'ON' else 'off' }}"
+                    ),
+                    "modes": ["off", "heat"],
+                    "temperature_command_topic": (
+                        f"{base}/{controller.id}/set/target_temperature"
+                    ),
+                    "temperature_state_topic": f"{base}/{controller.id}/state",
+                    "temperature_state_template": (
+                        "{{ value_json.target_temperature }}"
+                    ),
+                    "current_temperature_topic": f"{base}/{controller.id}/state",
+                    "current_temperature_template": (
+                        "{{ value_json.current_temperature }}"
+                    ),
+                    "action_topic": f"{base}/{controller.id}/state",
+                    "action_template": (
+                        "{{ 'off' if value_json.power != 'ON' else "
+                        "('heating' if value_json.heating else 'idle') }}"
+                    ),
+                    "min_temp": 30,
+                    "max_temp": 70,
+                    "temp_step": 1,
+                    "precision": 1.0,
+                    "temperature_unit": "C",
+                },
+                retain=True,
+            )
+            # Remove retained discovery records replaced by the climate entity.
+            self.publish(
+                f"{discovery}/switch/towelbar_{controller.id}_power/config",
+                "",
+                retain=True,
+            )
+            self.publish(
+                f"{discovery}/number/towelbar_{controller.id}_target_temperature/config",
+                "",
+                retain=True,
+            )
         entities = {
             ("switch", "power"): {
                 "name": "Power",
@@ -221,7 +277,9 @@ class HomeAssistantMqtt:
                 "name": "Default timer",
                 "command_topic": f"{base}/{controller.id}/set/default_timer_enabled",
                 "state_topic": f"{base}/{controller.id}/state",
-                "value_template": "{{ value_json.default_timer_enabled | upper }}",
+                "value_template": (
+                    "{{ 'ON' if value_json.default_timer_enabled else 'OFF' }}"
+                ),
                 "payload_on": "ON",
                 "payload_off": "OFF",
             },
@@ -272,9 +330,12 @@ class HomeAssistantMqtt:
         }
         protocol = controller.protocol
         supported = {
-            "power": controller.driver == "emmesteel" or bool(protocol and protocol.power),
+            "power": (
+                controller.driver != "emmesteel"
+                and bool(protocol and protocol.power)
+            ),
             "heat_level": controller.driver == "emmesteel" or bool(protocol and protocol.heat_level),
-            "target_temperature": controller.driver == "emmesteel",
+            "target_temperature": False,
             "timer_minutes": controller.driver == "emmesteel" or bool(protocol and protocol.timer_minutes),
             "default_timer_enabled": controller.driver == "emmesteel",
             "default_timer_minutes": controller.driver == "emmesteel",
@@ -295,6 +356,19 @@ class HomeAssistantMqtt:
                 "object_id": unique,
                 "device": device,
             }
+            if object_name == "current_temperature":
+                payload.pop("availability_topic", None)
+                payload["availability"] = [
+                    {"topic": f"{base}/availability"},
+                    {
+                        "topic": f"{base}/{controller.id}/state",
+                        "value_template": (
+                            "{{ 'online' if value_json.temperature_sensor_enabled "
+                            "else 'offline' }}"
+                        ),
+                    },
+                ]
+                payload["availability_mode"] = "all"
             self.publish(
                 f"{discovery}/{component}/{unique}/config", payload, retain=True
             )
@@ -320,6 +394,9 @@ class HomeAssistantMqtt:
             "timer_minutes": state.timer_minutes if state else None,
             "target_temperature": state.target_temperature if state else None,
             "current_temperature": state.current_temperature if state else None,
+            "temperature_sensor_enabled": (
+                state.temperature_sensor_enabled if state else None
+            ),
             "heating": state.heating if state else None,
             "timer_active": state.timer_active if state else None,
             "command_pending": command_pending,

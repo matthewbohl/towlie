@@ -34,12 +34,18 @@ def parse_state(message: str) -> ControllerState:
         timer = values[8] * 60 + values[9]
         if values.get(10, 0) > 0:
             timer += 1
+    sensor_enabled = bool(values[5]) if 5 in values else None
     return ControllerState(
         power=bool(values[0]) if 0 in values else None,
         heat_level=values.get(2),
         timer_minutes=timer,
         target_temperature=(values[3] - 20) / 2 if 3 in values else None,
-        current_temperature=(values[4] - 20) / 2 if 4 in values else None,
+        current_temperature=(
+            (values[4] - 20) / 2
+            if 4 in values and sensor_enabled is not False
+            else None
+        ),
+        temperature_sensor_enabled=sensor_enabled,
         heating=bool(values[11]) if 11 in values else None,
         timer_active=bool(values[7]) if 7 in values else None,
         raw=values,

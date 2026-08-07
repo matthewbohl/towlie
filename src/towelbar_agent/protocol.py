@@ -21,6 +21,7 @@ class ControllerState:
     timer_minutes: int | None = None
     target_temperature: float | None = None
     current_temperature: float | None = None
+    temperature_sensor_enabled: bool | None = None
     heating: bool | None = None
     timer_active: bool | None = None
     raw: Any = None

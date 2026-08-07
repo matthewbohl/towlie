@@ -228,9 +228,9 @@ In Home Assistant:
 
 Each EmmeSteel device normally exposes:
 
-- Power switch
+- Climate control with `Off` and `Heat` modes
+- Stored target temperature (`30–70 °C`) within the climate control
 - Heat-level control (`0–5`)
-- Target-temperature control (`30–70 °C`)
 - Current-temperature sensor
 - Heating-status sensor
 - Countdown duration

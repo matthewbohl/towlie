@@ -371,8 +371,8 @@ class HomeAssistantMqtt:
     ) -> None:
         payload = {
             "power": (
-                "ON" if state and state.power is True
-                else "OFF" if state and state.power is False
+                "ON" if state and state.active is True
+                else "OFF" if state and state.active is False
                 else None
             ),
             "heat_level": state.heat_level if state else None,

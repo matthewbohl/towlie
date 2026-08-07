@@ -212,7 +212,7 @@ class TowelBarAgent:
         try:
             state = client.apply(commands) if commands else client.status()
             needs_default_timer = (
-                state.power is True
+                state.active is True
                 and settings["enabled"]
                 and state.timer_active is False
                 and "timer_minutes" not in commands
@@ -238,13 +238,14 @@ class TowelBarAgent:
     @staticmethod
     def _verify_commands(state: object, commands: dict[str, object]) -> None:
         checks = {
-            "power": "power",
             "heat_level": "heat_level",
             "target_temperature": "target_temperature",
         }
         for command, attribute in checks.items():
             if command in commands and getattr(state, attribute, None) != commands[command]:
                 raise EmmeSteelError(f"controller did not confirm {command}")
+        if "power" in commands and getattr(state, "active", None) != commands["power"]:
+            raise EmmeSteelError("controller did not confirm active state")
         if "timer_minutes" in commands:
             expected_active = int(commands["timer_minutes"]) > 0
             if getattr(state, "timer_active", None) is not expected_active:

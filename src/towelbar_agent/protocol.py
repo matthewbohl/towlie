@@ -26,6 +26,20 @@ class ControllerState:
     timer_active: bool | None = None
     raw: Any = None
 
+    @property
+    def active(self) -> bool | None:
+        """Return the observed operating state for EmmeSteel-style devices.
+
+        A unit is active when it is heating or its hardware auto-off timer is
+        running.  It is inactive only when both indicators explicitly report
+        false; otherwise the controller has not supplied enough information.
+        """
+        if self.heating is True or self.timer_active is True:
+            return True
+        if self.heating is False and self.timer_active is False:
+            return False
+        return None
+
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
 

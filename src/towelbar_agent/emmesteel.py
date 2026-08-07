@@ -204,7 +204,10 @@ class EmmeSteelController:
             phase = self.trace.phase("first_state") if self.trace else _noop_context()
             with phase:
                 state = self._receive_state(ws)
-            if "power" in desired and state.power != bool(desired["power"]):
+            # P0 is not a reliable power indicator on these controllers: the
+            # Primary unit reports P0=0 while its timer and heating output are
+            # both active.  Use those observed operating signals instead.
+            if "power" in desired and state.active != bool(desired["power"]):
                 ws.send_text("on-off")
             if "heat_level" in desired:
                 target_level = int(desired["heat_level"])

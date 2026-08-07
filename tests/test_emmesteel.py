@@ -15,6 +15,7 @@ def test_parse_state_decodes_temperatures_and_timer():
     assert state.timer_minutes == 90
     assert state.timer_active is True
     assert state.heating is True
+    assert state.active is True
 
 
 def test_disabled_temperature_probe_does_not_publish_sentinel_value():
@@ -22,6 +23,13 @@ def test_disabled_temperature_probe_does_not_publish_sentinel_value():
     assert state.target_temperature == 70
     assert state.temperature_sensor_enabled is False
     assert state.current_temperature is None
+
+
+def test_active_uses_timer_and_heating_not_unreliable_p0():
+    active = parse_state("DT:P0=0P7=1P11=1")
+    inactive = parse_state("DT:P0=1P7=0P11=0")
+    assert active.active is True
+    assert inactive.active is False
 
 
 def test_timer_safety_limit_is_enforced_before_request():

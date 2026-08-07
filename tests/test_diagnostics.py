@@ -91,5 +91,6 @@ def test_formats_readable_soak_status_line():
     assert "off" in line
     assert "disabled" in line
     assert "no" in line
+    assert "0m" in line
     assert "30s" in line
     assert "35" in line

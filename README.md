@@ -363,7 +363,8 @@ commands. Home Assistant commands received during a soak remain pending until
 normal rotation resumes. Stop a running test safely with `soak-stop`.
 `soak-follow` prints one readable row per sample, including connection result,
 derived activity, raw power flag, target setting (heat level 0–5), heating
-activity, timer, stored temperature setting, current temperature, test interval,
+activity, timer-active state, countdown minutes, stored temperature setting,
+current temperature, test interval,
 settling delay, latency, and Wi-Fi signal. Add `--all` to replay existing soak
 samples before following new ones.
 

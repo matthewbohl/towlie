@@ -77,6 +77,7 @@ def test_formats_readable_soak_status_line():
                 "power": False,
                 "heat_level": 0,
                 "heating": False,
+                "timer_active": False,
                 "timer_minutes": 0,
                 "target_temperature": 70,
                 "current_temperature": None,
@@ -89,5 +90,6 @@ def test_formats_readable_soak_status_line():
     assert "primary_bath" in line
     assert "off" in line
     assert "disabled" in line
+    assert "no" in line
     assert "30s" in line
     assert "35" in line

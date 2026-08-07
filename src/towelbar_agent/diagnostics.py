@@ -234,8 +234,8 @@ def randomized_soak_matrix(
 
 
 SOAK_HEADER = (
-    "TIME     SAMPLE CONTROLLER     RESULT          RAW_PWR SETTING HEATING "
-    "TIMER TARGET CURRENT   INTERVAL SETTLE TOTAL  SIGNAL"
+    "TIME     SAMPLE CONTROLLER     RESULT          ACTIVE RAW_PWR SETTING "
+    "HEATING TIMER STORED_C CURRENT   INTERVAL SETTLE TOTAL  SIGNAL"
 )
 
 
@@ -251,6 +251,9 @@ def format_soak_event(event: dict[str, Any]) -> str | None:
     power_text = "on" if power is True else "off" if power is False else "?"
     heating = state.get("heating")
     heating_text = "yes" if heating is True else "no" if heating is False else "?"
+    timer_active = state.get("timer_active")
+    active = heating is True or timer_active is True
+    active_text = "yes" if active else "no" if heating is False and timer_active is False else "?"
     current = state.get("current_temperature")
     sensor_enabled = state.get("temperature_sensor_enabled")
     current_text = (
@@ -265,6 +268,7 @@ def format_soak_event(event: dict[str, Any]) -> str | None:
         f"#{int(event.get('sample', 0)):03d}",
         str(event.get("controller_id", "?"))[:14],
         result[:15],
+        active_text,
         power_text,
         str(state.get("heat_level", "?")),
         heating_text,
@@ -276,7 +280,7 @@ def format_soak_event(event: dict[str, Any]) -> str | None:
         f"{round(float(event.get('total_ms', 0)) / 1000, 1)}s",
         str(signal if signal is not None else "?"),
     ]
-    widths = [8, 6, 14, 15, 7, 7, 7, 6, 7, 9, 8, 6, 6, 6]
+    widths = [8, 6, 14, 15, 6, 7, 7, 7, 6, 8, 9, 8, 6, 6, 6]
     line = " ".join(value.ljust(width) for value, width in zip(fields, widths)).rstrip()
     if event.get("error"):
         line += f"  {event['error']}"

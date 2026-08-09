@@ -130,6 +130,11 @@ class HomeAssistantMqtt:
             if field in limits and not limits[field][0] <= value <= limits[field][1]:
                 raise ValueError(f"{field} is outside its configured range")
             self.commands.put(Command(controller_id, field, value))
+            if field == "heat_level":
+                # Make the selected value visible immediately, independently
+                # of the slower Wi-Fi poll that confirms the real controller
+                # level.
+                self.publish_heat_level_setpoint(controller_id, value)
             with self._pending_lock:
                 self._pending.add(controller_id)
                 self._command_failures.pop(controller_id, None)
@@ -206,6 +211,13 @@ class HomeAssistantMqtt:
             retain=True,
         )
 
+    def publish_heat_level_setpoint(self, controller_id: str, value: int | None) -> None:
+        self.publish(
+            f"{self.config.mqtt.topic_prefix}/{controller_id}/heat_level_setpoint",
+            {"heat_level": value},
+            retain=True,
+        )
+
     def publish_discovery(self, controller: ControllerConfig) -> None:
         discovery = self.config.mqtt.discovery_prefix
         base = self.config.mqtt.topic_prefix
@@ -271,15 +283,20 @@ class HomeAssistantMqtt:
                 "payload_on": "ON",
                 "payload_off": "OFF",
             },
-            ("number", "heat_level"): {
-                "name": "Heat level",
+            ("number", "heat_level_setpoint"): {
+                "name": "Heat level setpoint",
                 "command_topic": f"{base}/{controller.id}/set/heat_level",
-                "state_topic": f"{base}/{controller.id}/state",
+                "state_topic": f"{base}/{controller.id}/heat_level_setpoint",
                 "value_template": "{{ value_json.heat_level }}",
                 "min": 0,
                 "max": 5,
                 "step": 1,
                 "mode": "slider",
+            },
+            ("sensor", "heat_level_current"): {
+                "name": "Heat level",
+                "state_topic": f"{base}/{controller.id}/state",
+                "value_template": "{{ value_json.heat_level }}",
             },
             ("number", "target_temperature"): {
                 "name": "Target temperature",
@@ -357,7 +374,10 @@ class HomeAssistantMqtt:
                 controller.driver != "emmesteel"
                 and bool(protocol and protocol.power)
             ),
-            "heat_level": controller.driver == "emmesteel" or bool(protocol and protocol.heat_level),
+            "heat_level_setpoint": controller.driver == "emmesteel"
+            or bool(protocol and protocol.heat_level),
+            "heat_level_current": controller.driver == "emmesteel"
+            or bool(protocol and protocol.heat_level),
             "target_temperature": False,
             "timer_minutes": controller.driver == "emmesteel" or bool(protocol and protocol.timer_minutes),
             "default_timer_enabled": controller.driver == "emmesteel",
@@ -381,6 +401,13 @@ class HomeAssistantMqtt:
             self.publish(
                 f"{discovery}/{component}/{unique}/config", payload, retain=True
             )
+        # Replace the previous number entity with the explicit confirmed
+        # value and independently tracked desired setpoint.
+        self.publish(
+            f"{discovery}/number/towelbar_{controller.id}_heat_level/config",
+            "",
+            retain=True,
+        )
 
     def publish_state(
         self,
@@ -420,3 +447,5 @@ class HomeAssistantMqtt:
             payload,
             retain=True,
         )
+        if state and connection == "online" and not command_pending:
+            self.publish_heat_level_setpoint(controller.id, state.heat_level)

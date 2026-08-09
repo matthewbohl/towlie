@@ -221,12 +221,26 @@ class EmmeSteelController:
                 # P0 is not a reliable power indicator on these controllers: the
                 # Primary unit reports P0=0 while its timer and heating output are
                 # both active.  Use those observed operating signals instead.
-                if "power" in desired and state.active != bool(desired["power"]):
+                requested_power = desired.get("power")
+                requested_level = (
+                    int(desired["heat_level"]) if "heat_level" in desired else None
+                )
+                if requested_power is False and requested_level not in (None, 0):
+                    raise ValueError("cannot set a non-zero heat level while power is off")
+                # The controller has distinct power and level buttons. A
+                # non-zero level request from HA is therefore an on-and-set
+                # operation, while level zero is an off operation.
+                if requested_power is None and requested_level is not None:
+                    requested_power = requested_level > 0
+                if requested_power is not None and state.active != bool(requested_power):
                     state = self._send_and_confirm(ws, "on-off", commands_sent)
                 if "heat_level" in desired:
-                    target_level = int(desired["heat_level"])
+                    target_level = requested_level
+                    assert target_level is not None
                     if not 0 <= target_level <= 5:
                         raise ValueError("heat level must be between 0 and 5")
+                    if target_level == 0:
+                        return self.status()
                     current_level = state.heat_level or 0
                     command = "power-up" if target_level > current_level else "power-dn"
                     for expected_level in range(

@@ -1,5 +1,6 @@
 import pytest
 
+from towelbar_agent import emmesteel
 from towelbar_agent.emmesteel import EmmeSteelController, EmmeSteelError, parse_state
 
 
@@ -44,3 +45,42 @@ def test_temperature_command_is_hard_blocked_before_connecting():
     controller = EmmeSteelController("http://192.168.1.1/", "wlan0")
     with pytest.raises(EmmeSteelError, match="target-temperature"):
         controller.apply({"target_temperature": 50})
+
+
+def test_nonzero_heat_level_powers_on_before_adjusting_level(monkeypatch):
+    messages = iter(
+        [
+            "DT:P0=0P2=0P7=0P11=0",
+            "DT:P0=0P2=0P7=1P11=1",
+            "DT:P0=0P2=1P7=1P11=1",
+            "DT:P0=0P2=1P7=1P11=1",
+        ]
+    )
+    sent: list[str] = []
+
+    class FakeWebSocket:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def send_text(self, command):
+            sent.append(command)
+
+        def receive_text(self):
+            return next(messages)
+
+    monkeypatch.setattr(emmesteel, "BoundWebSocket", FakeWebSocket)
+    monkeypatch.setattr(emmesteel.time, "sleep", lambda _: None)
+
+    state = EmmeSteelController("http://192.168.1.1/", "wlan0").apply(
+        {"heat_level": 1}
+    )
+
+    assert sent == ["on-off", "power-up"]
+    assert state.heat_level == 1
+    assert state.active is True

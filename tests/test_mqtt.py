@@ -44,6 +44,23 @@ def test_emmesteel_discovery_uses_mode_only_climate_and_removes_unsupported_cont
     assert published[raw_power] == ("", True)
     assert published[raw_target] == ("", True)
     assert published[old_current_temperature] == ("", True)
+    old_heat_level = f"homeassistant/number/towelbar_{controller.id}_heat_level/config"
+    assert published[old_heat_level] == ("", True)
+
+    setpoint = (
+        f"homeassistant/number/towelbar_{controller.id}_heat_level_setpoint/config"
+    )
+    setpoint_payload, retained = published[setpoint]
+    assert retained is True
+    assert setpoint_payload["name"] == "Heat level setpoint"
+    assert setpoint_payload["state_topic"].endswith("/heat_level_setpoint")
+
+    current = (
+        f"homeassistant/sensor/towelbar_{controller.id}_heat_level_current/config"
+    )
+    current_payload, retained = published[current]
+    assert retained is True
+    assert current_payload["name"] == "Heat level"
 
 
 def test_failed_command_retries_are_bounded():

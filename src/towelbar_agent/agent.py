@@ -215,6 +215,9 @@ class TowelBarAgent:
             commands.setdefault("timer_minutes", 0)
 
         try:
+            # Persist the requested command names before executing them so a
+            # failed attempt is diagnosable too, not just successful commands.
+            trace.update(command_names=sorted(commands))
             state = client.apply(commands) if commands else client.status()
             needs_default_timer = (
                 state.active is True
@@ -225,7 +228,7 @@ class TowelBarAgent:
             if needs_default_timer:
                 state = client.apply({"timer_minutes": settings["minutes"]})
             self._verify_commands(state, commands)
-            trace.update(state=state.as_dict(), command_names=sorted(commands))
+            trace.update(state=state.as_dict())
             self._record_state(controller.id, state)
             self.mqtt.confirm(controller.id)
             self.mqtt.publish_state(

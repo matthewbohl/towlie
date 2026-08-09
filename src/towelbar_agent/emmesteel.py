@@ -188,6 +188,7 @@ class EmmeSteelController:
     timeout: float = 8
     max_timer_minutes: int = 240
     trace: Any | None = None
+    command_settle_seconds: float = 0.75
 
     @property
     def websocket_url(self) -> str:
@@ -201,37 +202,76 @@ class EmmeSteelController:
                 return self._receive_state(ws)
 
     def apply(self, desired: dict[str, object]) -> ControllerState:
-        with BoundWebSocket(self.websocket_url, self.interface, self.timeout, self.trace) as ws:
-            phase = self.trace.phase("first_state") if self.trace else _noop_context()
-            with phase:
-                state = self._receive_state(ws)
-            # P0 is not a reliable power indicator on these controllers: the
-            # Primary unit reports P0=0 while its timer and heating output are
-            # both active.  Use those observed operating signals instead.
-            if "power" in desired and state.active != bool(desired["power"]):
-                ws.send_text("on-off")
-            if "heat_level" in desired:
-                target_level = int(desired["heat_level"])
-                if not 0 <= target_level <= 5:
-                    raise ValueError("heat level must be between 0 and 5")
-                current_level = state.heat_level or 0
-                command = "power-up" if target_level > current_level else "power-dn"
-                for _ in range(abs(target_level - current_level)):
-                    ws.send_text(command)
-            if "target_temperature" in desired:
-                temperature = float(desired["target_temperature"])
-                if not 30 <= temperature <= 70 or temperature % 1:
-                    raise ValueError("temperature must be a whole degree from 30 to 70 °C")
-                ws.send_text(f"tempSlider{int(temperature * 2 + 20)}")
+        if "target_temperature" in desired:
+            # These North American controllers report P5=0, which makes their
+            # own web UI hide the temperature slider.  Do not exercise the
+            # dormant European temperature-regulation firmware path.
+            raise EmmeSteelError(
+                "target-temperature control is not supported by this controller"
+            )
+        commands_sent: list[str] = []
+        state: ControllerState | None = None
+        try:
+            with BoundWebSocket(
+                self.websocket_url, self.interface, self.timeout, self.trace
+            ) as ws:
+                phase = self.trace.phase("first_state") if self.trace else _noop_context()
+                with phase:
+                    state = self._receive_state(ws)
+                # P0 is not a reliable power indicator on these controllers: the
+                # Primary unit reports P0=0 while its timer and heating output are
+                # both active.  Use those observed operating signals instead.
+                if "power" in desired and state.active != bool(desired["power"]):
+                    state = self._send_and_confirm(ws, "on-off", commands_sent)
+                if "heat_level" in desired:
+                    target_level = int(desired["heat_level"])
+                    if not 0 <= target_level <= 5:
+                        raise ValueError("heat level must be between 0 and 5")
+                    current_level = state.heat_level or 0
+                    command = "power-up" if target_level > current_level else "power-dn"
+                    for expected_level in range(
+                        current_level + (1 if target_level > current_level else -1),
+                        target_level + (1 if target_level > current_level else -1),
+                        1 if target_level > current_level else -1,
+                    ):
+                        state = self._send_and_confirm(ws, command, commands_sent)
+                        if state.heat_level != expected_level:
+                            raise EmmeSteelError(
+                                f"controller did not confirm {command}: "
+                                f"expected level {expected_level}, got {state.heat_level}"
+                            )
+        finally:
+            if self.trace:
+                self.trace.update(websocket_commands=commands_sent)
 
         if "timer_minutes" in desired:
             self.set_timer(int(desired["timer_minutes"]))
         # The controller applies WebSocket button presses asynchronously.  A
         # short pause before opening the read-back socket avoids treating the
         # preceding state as a failed command.
-        if desired:
+        if "timer_minutes" in desired:
             time.sleep(1)
         return self.status()
+
+    def _send_and_confirm(
+        self, ws: BoundWebSocket, command: str, commands_sent: list[str]
+    ) -> ControllerState:
+        """Send one UI-equivalent press and wait for its state update.
+
+        The controller drops commands when several WebSocket frames arrive in
+        a burst.  Its browser UI produces a single click at a time, so preserve
+        that cadence and keep this connection open through confirmation.
+        """
+        phase = (
+            self.trace.phase(f"websocket_command_{len(commands_sent) + 1}")
+            if self.trace
+            else _noop_context()
+        )
+        with phase:
+            ws.send_text(command)
+            commands_sent.append(command)
+            time.sleep(self.command_settle_seconds)
+            return self._receive_state(ws)
 
     def set_timer(self, minutes: int) -> None:
         if not 0 <= minutes <= self.max_timer_minutes:

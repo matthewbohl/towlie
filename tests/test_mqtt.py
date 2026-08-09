@@ -5,7 +5,7 @@ from towelbar_agent.config import ProtocolProfile, load_config
 from towelbar_agent.mqtt import HomeAssistantMqtt
 
 
-def test_emmesteel_discovery_uses_climate_and_removes_raw_controls():
+def test_emmesteel_discovery_uses_mode_only_climate_and_removes_unsupported_controls():
     config = load_config(Path(__file__).parents[1] / "config.example.yaml")
     mqtt = HomeAssistantMqtt(config)
     published = {}
@@ -30,13 +30,9 @@ def test_emmesteel_discovery_uses_climate_and_removes_raw_controls():
     assert retained is True
     assert climate["modes"] == ["off", "heat"]
     assert climate["mode_command_topic"].endswith("/set/mode")
-    assert climate["temperature_command_topic"].endswith(
-        "/set/target_temperature"
-    )
+    assert "temperature_command_topic" not in climate
     assert climate["name"] == "Towel Bar Control"
     assert "current_temperature_topic" not in climate
-    assert climate["min_temp"] == 30
-    assert climate["max_temp"] == 70
 
     raw_power = f"homeassistant/switch/towelbar_{controller.id}_power/config"
     raw_target = (

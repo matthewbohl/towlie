@@ -1,6 +1,6 @@
 import pytest
 
-from towelbar_agent.emmesteel import EmmeSteelController, parse_state
+from towelbar_agent.emmesteel import EmmeSteelController, EmmeSteelError, parse_state
 
 
 def test_parse_state_decodes_temperatures_and_timer():
@@ -38,3 +38,9 @@ def test_timer_safety_limit_is_enforced_before_request():
     )
     with pytest.raises(ValueError, match="240"):
         controller.set_timer(241)
+
+
+def test_temperature_command_is_hard_blocked_before_connecting():
+    controller = EmmeSteelController("http://192.168.1.1/", "wlan0")
+    with pytest.raises(EmmeSteelError, match="target-temperature"):
+        controller.apply({"target_temperature": 50})

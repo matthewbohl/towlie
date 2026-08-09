@@ -117,6 +117,10 @@ class HomeAssistantMqtt:
             else:
                 return
             controller = self.controllers[controller_id]
+            if field == "target_temperature" and controller.driver == "emmesteel":
+                raise ValueError(
+                    "target-temperature control is unsupported on North American TDHC units"
+                )
             limits = {
                 "heat_level": (0, 5),
                 "timer_minutes": (0, controller.max_timer_minutes),
@@ -217,9 +221,9 @@ class HomeAssistantMqtt:
             self.publish(
                 f"{discovery}/climate/{unique}/config",
                 {
-                    # HA's climate domain gives us one standard control for the
-                    # on/off mode and stored temperature setting.  This is not a
-                    # room-temperature thermostat.
+                    # HA's climate domain gives us a standard on/off mode. It
+                    # is not a room-temperature thermostat; these controllers
+                    # have their temperature-regulation feature disabled.
                     "name": "Towel Bar Control",
                     "unique_id": unique,
                     "object_id": unique,
@@ -231,23 +235,11 @@ class HomeAssistantMqtt:
                         "{{ 'heat' if value_json.power == 'ON' else 'off' }}"
                     ),
                     "modes": ["off", "heat"],
-                    "temperature_command_topic": (
-                        f"{base}/{controller.id}/set/target_temperature"
-                    ),
-                    "temperature_state_topic": f"{base}/{controller.id}/state",
-                    "temperature_state_template": (
-                        "{{ value_json.target_temperature }}"
-                    ),
                     "action_topic": f"{base}/{controller.id}/state",
                     "action_template": (
                         "{{ 'off' if value_json.power != 'ON' else "
                         "('heating' if value_json.heating else 'idle') }}"
                     ),
-                    "min_temp": 30,
-                    "max_temp": 70,
-                    "temp_step": 1,
-                    "precision": 1.0,
-                    "temperature_unit": "C",
                 },
                 retain=True,
             )

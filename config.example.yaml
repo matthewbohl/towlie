@@ -17,7 +17,7 @@ diagnostics:
   max_file_megabytes: 20
 
 mqtt:
-  host: muthur.mbohl.com
+  host: homeassistant.local
   port: 1883
   username: towelbar
   password: change-me

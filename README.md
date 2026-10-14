@@ -114,7 +114,7 @@ Clone the repository on the Raspberry Pi and run the installer with dependency
 installation enabled:
 
 ```bash
-git clone https://github.com/matthewbohl/towlie.git
+git clone https://github.com/YOUR_USERNAME/towlie.git
 cd towlie
 sudo ./scripts/install-raspberry-pi-os.sh --install-dependencies
 ```
@@ -170,7 +170,7 @@ diagnostics:
   max_file_megabytes: 20
 
 mqtt:
-  host: muthur.mbohl.com
+  host: homeassistant.local
   port: 1883
   username: towelbar
   password: replace-with-mqtt-password
@@ -190,7 +190,7 @@ Add one entry for every towel bar:
 controllers:
   - id: primary_bath
     name: Primary Bathroom Towel Bar
-    ssid: EMMESTEEL_EL2_890_25_0069
+    ssid: EMMESTEEL_SERIAL_ONE
     password: replace-with-controller-password
     driver: emmesteel
     base_url: http://192.168.1.1/
@@ -201,7 +201,7 @@ controllers:
 
   - id: guest_bath
     name: Guest Bathroom Towel Bar
-    ssid: EMMESTEEL_24TS001267
+    ssid: EMMESTEEL_SERIAL_TWO
     password: replace-with-controller-password
     driver: emmesteel
     base_url: http://192.168.1.1/

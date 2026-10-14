@@ -194,6 +194,7 @@ controllers:
     password: replace-with-controller-password
     driver: emmesteel
     base_url: http://192.168.1.1/
+    wifi_ipv4_address: 192.168.1.250/24
     default_timer_enabled: true
     default_timer_minutes: 120
     max_timer_minutes: 240
@@ -204,6 +205,7 @@ controllers:
     password: replace-with-controller-password
     driver: emmesteel
     base_url: http://192.168.1.1/
+    wifi_ipv4_address: 192.168.1.250/24
     default_timer_enabled: true
     default_timer_minutes: 120
     max_timer_minutes: 240
@@ -216,6 +218,11 @@ The hardware timer accepts hours and minutes. Towlie exposes a single duration
 in minutes, validates it against `max_timer_minutes`, and converts it safely.
 When default-timer mode is enabled, any powered-on towel bar without an active
 hardware timer is assigned the configured default on its next poll.
+
+Set `wifi_ipv4_address` when a controller's DHCP server is unreliable. It
+assigns that address only to the Pi's Wi-Fi interface while connected to the
+controller hotspot; it does not change the towel bar or the Pi's Ethernet
+network. Use CIDR notation and an unused address on the controller subnet.
 
 ## Start the agent
 

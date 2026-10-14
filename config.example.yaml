@@ -32,6 +32,8 @@ controllers:
 
     driver: emmesteel
     base_url: http://192.168.1.1/
+    # Optional: bypass unreliable controller DHCP while retaining hotspot mode.
+    wifi_ipv4_address: 192.168.1.250/24
     default_timer_enabled: true
     default_timer_minutes: 120
     max_timer_minutes: 240
@@ -42,6 +44,7 @@ controllers:
     password: replace-with-controller-password
     driver: emmesteel
     base_url: http://192.168.1.1/
+    wifi_ipv4_address: 192.168.1.250/24
     default_timer_enabled: true
     default_timer_minutes: 120
     max_timer_minutes: 240

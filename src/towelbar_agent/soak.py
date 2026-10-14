@@ -139,6 +139,7 @@ def run_soak(
                     config.connect_timeout_seconds,
                     settle_seconds=settle,
                     trace=trace,
+                    ipv4_address=controller.wifi_ipv4_address,
                 )
                 client = EmmeSteelController(
                     controller.base_url or f"http://{gateway}/",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import ipaddress
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +79,7 @@ class ControllerConfig:
     default_timer_enabled: bool = True
     default_timer_minutes: int = 120
     max_timer_minutes: int = 240
+    wifi_ipv4_address: str | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +130,19 @@ def load_config(path: str | Path) -> AgentConfig:
         if controller_id in seen:
             raise ConfigError(f"duplicate controller id: {controller_id}")
         seen.add(controller_id)
+        wifi_ipv4_address = item.get("wifi_ipv4_address")
+        if wifi_ipv4_address is not None:
+            try:
+                parsed_address = ipaddress.ip_interface(str(wifi_ipv4_address))
+            except ValueError as exc:
+                raise ConfigError(
+                    f"{controller_id}: wifi_ipv4_address must be an IPv4 CIDR address"
+                ) from exc
+            if parsed_address.version != 4:
+                raise ConfigError(
+                    f"{controller_id}: wifi_ipv4_address must be an IPv4 CIDR address"
+                )
+            wifi_ipv4_address = str(parsed_address)
         controllers.append(
             ControllerConfig(
                 id=controller_id,
@@ -149,6 +164,7 @@ def load_config(path: str | Path) -> AgentConfig:
                 default_timer_enabled=bool(item.get("default_timer_enabled", True)),
                 default_timer_minutes=int(item.get("default_timer_minutes", 120)),
                 max_timer_minutes=int(item.get("max_timer_minutes", 240)),
+                wifi_ipv4_address=wifi_ipv4_address,
             )
         )
         controller = controllers[-1]

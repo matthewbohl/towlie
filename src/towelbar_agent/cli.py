@@ -72,7 +72,10 @@ def connect_controller(config: object, controller_id: str):
     controller = controller_by_id(config, controller_id)
     network = NetworkManager(config.wifi_interface)
     gateway = network.connect(
-        controller.ssid, controller.password, config.connect_timeout_seconds
+        controller.ssid,
+        controller.password,
+        config.connect_timeout_seconds,
+        ipv4_address=controller.wifi_ipv4_address,
     )
     return controller, gateway
 

@@ -159,6 +159,7 @@ class TowelBarAgent:
             self.config.connect_timeout_seconds,
             settle_seconds=self.config.rotation.settle_after_connect_seconds,
             trace=trace,
+            ipv4_address=controller.wifi_ipv4_address,
         )
         if controller.driver == "emmesteel":
             self._poll_emmesteel(controller, gateway, trace)

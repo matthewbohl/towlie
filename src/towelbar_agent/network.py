@@ -107,6 +107,7 @@ class NetworkManager:
         timeout: float = 20,
         settle_seconds: float = 0,
         trace: Any | None = None,
+        ipv4_address: str | None = None,
     ) -> str:
         connection_name = f"towelbar-{self._safe_name(ssid)}"
         with self._phase(trace, "profile_lookup"):
@@ -123,15 +124,22 @@ class NetworkManager:
                 )
         # Passing the password as an argv value is unavoidable with nmcli, but the
         # systemd unit is restricted to the dedicated service account.
-        with self._phase(trace, "profile_configure"):
-            self._command(
-                [
-                    "nmcli", "connection", "modify", connection_name,
-                    "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", password,
-                    "connection.autoconnect", "no", "ipv4.never-default", "yes",
-                    "ipv6.method", "disabled",
-                ]
+        profile_settings = [
+            "nmcli", "connection", "modify", connection_name,
+            "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", password,
+            "connection.autoconnect", "no", "ipv4.never-default", "yes",
+            "ipv6.method", "disabled",
+        ]
+        if ipv4_address:
+            profile_settings.extend(
+                ["ipv4.method", "manual", "ipv4.addresses", ipv4_address, "ipv4.gateway", ""]
             )
+        else:
+            profile_settings.extend(
+                ["ipv4.method", "auto", "ipv4.addresses", "", "ipv4.gateway", ""]
+            )
+        with self._phase(trace, "profile_configure"):
+            self._command(profile_settings)
         with self._phase(trace, "associate"):
             self._command(
                 [

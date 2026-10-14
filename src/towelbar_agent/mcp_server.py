@@ -60,7 +60,10 @@ def context(controller_id: str):
         raise ValueError(f"unknown controller: {controller_id}")
     network = NetworkManager(config.wifi_interface)
     gateway = network.connect(
-        controller.ssid, controller.password, config.connect_timeout_seconds
+        controller.ssid,
+        controller.password,
+        config.connect_timeout_seconds,
+        ipv4_address=controller.wifi_ipv4_address,
     )
     base_url = (controller.base_url or f"http://{gateway}/").rstrip("/") + "/"
     return config, controller, base_url, network.interface
@@ -164,6 +167,7 @@ def probe_controller(controller_id: str) -> dict[str, Any]:
                 config.connect_timeout_seconds,
                 config.rotation.settle_after_connect_seconds,
                 trace,
+                ipv4_address=controller.wifi_ipv4_address,
             )
             client = EmmeSteelController(
                 controller.base_url or f"http://{gateway}/",

@@ -49,6 +49,34 @@ def test_network_error_redacts_wifi_password():
     assert "<redacted>" in str(caught.value)
 
 
+def test_connect_configures_static_ipv4_address():
+    calls = []
+
+    def runner(args, **kwargs):
+        calls.append(args)
+        if args[:5] == ["nmcli", "-t", "-f", "NAME", "connection"]:
+            return completed("towelbar-EMMESTEEL_TEST\n")
+        if args[:4] == ["ip", "-j", "-4", "address"]:
+            return completed(
+                '[{"addr_info":[{"family":"inet","local":"192.168.1.250",'
+                '"prefixlen":24}]}]'
+            )
+        if args[:5] == ["nmcli", "-g", "GENERAL.CONNECTION", "device", "show"]:
+            return completed("towelbar-EMMESTEEL_TEST\n")
+        return completed()
+
+    gateway = NetworkManager("wlan0", runner=runner).connect(
+        "EMMESTEEL_TEST",
+        "test-password",
+        ipv4_address="192.168.1.250/24",
+    )
+
+    assert gateway == "192.168.1.1"
+    modify = next(call for call in calls if call[:3] == ["nmcli", "connection", "modify"])
+    assert modify[modify.index("ipv4.method") + 1] == "manual"
+    assert modify[modify.index("ipv4.addresses") + 1] == "192.168.1.250/24"
+
+
 def test_wifi_lock_is_exclusive(tmp_path, monkeypatch):
     monkeypatch.setenv("TOWELBAR_LOCK_DIR", str(tmp_path))
     with WifiLock("wlan0"):

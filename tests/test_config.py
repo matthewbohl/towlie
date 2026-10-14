@@ -28,6 +28,42 @@ controllers:
     assert config.wifi_interface == "wlan0"
     assert config.controllers[0].password == "test-password"
     assert config.controllers[0].protocol is None
+    assert config.controllers[0].wifi_ipv4_address is None
+
+
+def test_loads_controller_static_wifi_address(tmp_path: Path):
+    config = load_config(
+        write_config(
+            tmp_path,
+            """
+mqtt:
+  host: mqtt.local
+controllers:
+  - id: bath
+    ssid: EMMESTEEL_TEST
+    password: test-password
+    wifi_ipv4_address: 192.168.1.250/24
+""",
+        )
+    )
+    assert config.controllers[0].wifi_ipv4_address == "192.168.1.250/24"
+
+
+def test_rejects_invalid_controller_static_wifi_address(tmp_path: Path):
+    path = write_config(
+        tmp_path,
+        """
+mqtt:
+  host: mqtt.local
+controllers:
+  - id: bath
+    ssid: EMMESTEEL_TEST
+    password: test-password
+    wifi_ipv4_address: not-an-address
+""",
+    )
+    with pytest.raises(ConfigError, match="IPv4 CIDR"):
+        load_config(path)
 
 
 def test_duplicate_controller_ids_are_rejected(tmp_path: Path):
